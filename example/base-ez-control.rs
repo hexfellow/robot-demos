@@ -6,10 +6,10 @@ use tokio_tungstenite::MaybeTlsStream;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(help = "WebSocket URL to connect to (e.g. ws://localhost:8080)")]
+    #[arg(help = "WebSocket URL to connect to (e.g. ws://localhost:8439)")]
     url: String,
 }
-
+// Protobuf generated code.
 pub mod base_backend {
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
@@ -30,6 +30,7 @@ async fn main() {
         }
     };
     info!("Connected to: {}", args.url);
+    // Remember to set tcp_nodelay to true, to get better performance.
     match ws_stream.get_ref() {
         MaybeTlsStream::Plain(stream) => {
             stream.set_nodelay(true).unwrap();
@@ -37,42 +38,27 @@ async fn main() {
         _ => warn!("set_nodelay not implemented for TLS streams"),
     }
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
+    // Spawn the print task
     tokio::spawn(async move {
         while let Some(msg) = ws_stream.next().await {
-            // protobuf binary, type is ApiUp
-            // Parse the message, and check if it is a BaseStatus. If so, check for parking stop. Is has parking stop, print it.
-            // Else, just do nothing.
             let msg = msg.unwrap();
             match msg {
                 tungstenite::Message::Binary(bytes) => {
                     let msg = base_backend::ApiUp::decode(bytes).unwrap();
+                    // This prints a lot of stuff, including IMU data, gamepad data, etc.
+                    // You can change this code to only print things you care about.
                     info!("Got message: {:?}", msg);
                 }
                 _ => {}
             };
         }
     });
-    // Disable the base.
-    let disable_message = base_backend::ApiDown {
-        down: Some(base_backend::api_down::Down::BaseCommand(
-            base_backend::BaseCommand {
-                command: Some(base_backend::base_command::Command::ApiControlInitialize(
-                    false,
-                )),
-            },
-        )),
-    };
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            disable_message.encode_to_vec().into(),
-        ))
-        .await
-        .unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     loop {
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        // You can also use tokio's tick if you want
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
         // Down, base command, command, api_control_initialize = true
+        // You actully only have to send this once. But let's be lazy and send it every time.
         let enable_message = base_backend::ApiDown {
             down: Some(base_backend::api_down::Down::BaseCommand(
                 base_backend::BaseCommand {
@@ -83,7 +69,7 @@ async fn main() {
             )),
         };
 
-        // Down, base command, command, simple_move_command, vx = 1, vy = 0, w = 0
+        // Down, base command, command, simple_move_command, vx = 0.1, vy = 0, w = 0
         let move_message = base_backend::ApiDown {
             down: Some(base_backend::api_down::Down::BaseCommand(
                 base_backend::BaseCommand {
