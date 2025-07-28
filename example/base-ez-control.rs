@@ -1,3 +1,8 @@
+// This is a demo controling base to move at 0.1 m/s forward, while printing data from the base.
+// Based on this code, we make some nice control showcase, like:
+// https://github.com/orgs/hexfellow/discussions/1
+// https://github.com/orgs/hexfellow/discussions/2
+
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
@@ -58,7 +63,6 @@ async fn main() {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
         // Down, base command, command, api_control_initialize = true
-        // You actully only have to send this once. But let's be lazy and send it every time.
         let enable_message = base_backend::ApiDown {
             down: Some(base_backend::api_down::Down::BaseCommand(
                 base_backend::BaseCommand {
@@ -94,6 +98,7 @@ async fn main() {
         let enable_bytes = enable_message.encode_to_vec();
         let move_bytes = move_message.encode_to_vec();
 
+        // You should only have to send this once in production. But let's be lazy and send it every time here.
         if let Err(e) = ws_sink
             .send(tungstenite::Message::Binary(enable_bytes.into()))
             .await
