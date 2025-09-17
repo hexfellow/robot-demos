@@ -39,6 +39,7 @@ http-body-util = "0.1.2"
 url = "2.5.0"
 lazy_static = "1.4.0"
 random = "0.14.0"
+mdns-sd = "0.14.1"
 
 
 [build-dependencies]

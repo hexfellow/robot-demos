@@ -52,7 +52,15 @@ async fn main() {
                     let msg = base_backend::ApiUp::decode(bytes).unwrap();
                     // This prints a lot of stuff, including IMU data, gamepad data, etc.
                     // You can change this code to only print things you care about.
-                    info!("Got message: {:?}", msg);
+                    // let status = msg.status.unwrap();
+                    info!("Reported fq: {:?}", msg.report_frequency());
+                    // match status {
+                    //     base_backend::api_up::Status::BaseStatus(base_status) => {
+                    //         let s = base_status.state;
+                    //     }
+                    //     _ => {}
+                    // }
+                    // info!("Got message: {:?}", msg.status.unwrap());
                 }
                 _ => {}
             };
@@ -64,12 +72,8 @@ async fn main() {
 
         // Down, base command, command, api_control_initialize = true
         let enable_message = base_backend::ApiDown {
-            down: Some(base_backend::api_down::Down::BaseCommand(
-                base_backend::BaseCommand {
-                    command: Some(base_backend::base_command::Command::ApiControlInitialize(
-                        true,
-                    )),
-                },
+            down: Some(base_backend::api_down::Down::SetReportFrequency(
+                base_backend::ReportFrequency::Rf50Hz as i32,
             )),
         };
 
@@ -82,7 +86,7 @@ async fn main() {
                             command: Some(
                                 base_backend::simple_base_move_command::Command::XyzSpeed(
                                     base_backend::XyzSpeed {
-                                        speed_x: 0.1,
+                                        speed_x: 0.0,
                                         speed_y: 0.0,
                                         speed_z: 0.0,
                                     },
