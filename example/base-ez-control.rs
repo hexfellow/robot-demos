@@ -115,7 +115,7 @@ async fn main() {
                             command: Some(
                                 base_backend::simple_base_move_command::Command::XyzSpeed(
                                     base_backend::XyzSpeed {
-                                        speed_x: 0.0,
+                                        speed_x: 0.1,
                                         speed_y: 0.0,
                                         speed_z: 0.0,
                                     },
