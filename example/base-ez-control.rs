@@ -50,32 +50,61 @@ async fn main() {
             match msg {
                 tungstenite::Message::Binary(bytes) => {
                     let msg = base_backend::ApiUp::decode(bytes).unwrap();
-                    // This prints a lot of stuff, including IMU data, gamepad data, etc.
-                    // You can change this code to only print things you care about.
-                    // let status = msg.status.unwrap();
-                    info!("Reported fq: {:?}", msg.report_frequency());
-                    // match status {
-                    //     base_backend::api_up::Status::BaseStatus(base_status) => {
-                    //         let s = base_status.state;
-                    //     }
-                    //     _ => {}
-                    // }
-                    // info!("Got message: {:?}", msg.status.unwrap());
+                    if let Some(log) = msg.log {
+                        warn!("Log from base: {:?}", log);
+                    }
+                    match msg.status {
+                        Some(base_backend::api_up::Status::BaseStatus(base_status)) => {
+                            if let Some(estimated_odometry) = base_status.estimated_odometry {
+                                info!("Estimated odometry: {:?}", estimated_odometry);
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             };
         }
     });
+    // Down, base command, command, api_control_initialize = true
+    let set_report_frequency_message = base_backend::ApiDown {
+        down: Some(base_backend::api_down::Down::SetReportFrequency(
+            base_backend::ReportFrequency::Rf50Hz as i32,
+        )),
+    };
+    let set_report_frequency_bytes = set_report_frequency_message.encode_to_vec();
+    // You should only have to send this once in production. But let's be lazy and send it every time here.
+    if let Err(e) = ws_sink
+        .send(tungstenite::Message::Binary(
+            set_report_frequency_bytes.into(),
+        ))
+        .await
+    {
+        error!("Failed to send enable message: {}", e);
+        return;
+    }
+    // Down, base command, command, api_control_initialize = true
+    let enable_message = base_backend::ApiDown {
+        down: Some(base_backend::api_down::Down::BaseCommand(
+            base_backend::BaseCommand {
+                command: Some(base_backend::base_command::Command::ApiControlInitialize(
+                    true,
+                )),
+            },
+        )),
+    };
+    let enable_bytes = enable_message.encode_to_vec();
+    // You should only have to send this once in production. But let's be lazy and send it every time here.
+    if let Err(e) = ws_sink
+        .send(tungstenite::Message::Binary(enable_bytes.into()))
+        .await
+    {
+        error!("Failed to send enable message: {}", e);
+        return;
+    }
     loop {
         // You can also use tokio's tick if you want
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-
-        // Down, base command, command, api_control_initialize = true
-        let enable_message = base_backend::ApiDown {
-            down: Some(base_backend::api_down::Down::SetReportFrequency(
-                base_backend::ReportFrequency::Rf50Hz as i32,
-            )),
-        };
 
         // Down, base command, command, simple_move_command, vx = 0.1, vy = 0, w = 0
         let move_message = base_backend::ApiDown {
@@ -99,17 +128,7 @@ async fn main() {
         };
 
         // Send binary messages
-        let enable_bytes = enable_message.encode_to_vec();
         let move_bytes = move_message.encode_to_vec();
-
-        // You should only have to send this once in production. But let's be lazy and send it every time here.
-        if let Err(e) = ws_sink
-            .send(tungstenite::Message::Binary(enable_bytes.into()))
-            .await
-        {
-            error!("Failed to send enable message: {}", e);
-            break;
-        }
 
         if let Err(e) = ws_sink
             .send(tungstenite::Message::Binary(move_bytes.into()))
