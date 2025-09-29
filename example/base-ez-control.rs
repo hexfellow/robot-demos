@@ -72,8 +72,9 @@ async fn main() {
             base_backend::ReportFrequency::Rf50Hz as i32,
         )),
     };
+    // Set report frequency to 50Hz; Since its a simple demo using simple_move_command, we don't need to hear from base too often.
+    // This will only work for the current session, different sessions have independent report frequency settings.
     let set_report_frequency_bytes = set_report_frequency_message.encode_to_vec();
-    // You should only have to send this once in production. But let's be lazy and send it every time here.
     if let Err(e) = ws_sink
         .send(tungstenite::Message::Binary(
             set_report_frequency_bytes.into(),
@@ -83,7 +84,8 @@ async fn main() {
         error!("Failed to send enable message: {}", e);
         return;
     }
-    // Down, base command, command, api_control_initialize = true
+
+    // Before sending move command, we need to set initialize the base first.
     let enable_message = base_backend::ApiDown {
         down: Some(base_backend::api_down::Down::BaseCommand(
             base_backend::BaseCommand {
@@ -94,7 +96,6 @@ async fn main() {
         )),
     };
     let enable_bytes = enable_message.encode_to_vec();
-    // You should only have to send this once in production. But let's be lazy and send it every time here.
     if let Err(e) = ws_sink
         .send(tungstenite::Message::Binary(enable_bytes.into()))
         .await
