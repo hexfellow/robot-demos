@@ -4,8 +4,9 @@
 
 ### Pre-requisites
 
-1. Make sure you have latest hex_device installed.
+1. Make sure you have latest hex_device installed. Python sometimes lazy check the version, so we need to force upgrade.
 ```bash
+pip install hex_device --upgrade
 pip install hex_device --upgrade
 ```
 

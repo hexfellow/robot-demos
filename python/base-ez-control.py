@@ -46,17 +46,19 @@ def main():
                 break
             else:                
                 for device in api.device_list:
-                    # for ChassisMaver
                     if isinstance(device, Chassis):
                         if device.has_new_data():
-                            print(
-                                f"vehicle position: {device.get_vehicle_position()}"
-                            )
+                            print(f"vehicle position: {device.get_vehicle_position()}")
+                            device.start() # Actully only have to call once, but lets be lazy and call it every time XD
                             device.set_vehicle_speed(0.0, 0.0, 0.1)
             time.sleep(0.002)
 
     except KeyboardInterrupt:
         print("Received Ctrl-C.")
+        for device in api.device_list:
+            if isinstance(device, Chassis):
+                device.stop() # Saves base from timeout error
+        time.sleep(0.1)
         api.close()
     finally:
         pass
