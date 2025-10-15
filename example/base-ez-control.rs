@@ -45,13 +45,12 @@ async fn main() {
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
     // Spawn the print task
     tokio::spawn(async move {
-        while let Some(msg) = ws_stream.next().await {
-            let msg = msg.unwrap();
+        while let Some(Ok(msg)) = ws_stream.next().await {
             match msg {
                 tungstenite::Message::Binary(bytes) => {
                     let msg = base_backend::ApiUp::decode(bytes).unwrap();
                     if let Some(log) = msg.log {
-                        warn!("Log from base: {:?}", log);
+                        warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
                     }
                     match msg.status {
                         Some(base_backend::api_up::Status::BaseStatus(base_status)) => {
@@ -73,6 +72,7 @@ async fn main() {
         )),
     };
     // Set report frequency to 50Hz; Since its a simple demo using simple_move_command, we don't need to hear from base too often.
+    // If not changed, it will spam Estimated odometry at 1000Hz, which is too much for a simple demo.
     // This will only work for the current session, different sessions have independent report frequency settings.
     let set_report_frequency_bytes = set_report_frequency_message.encode_to_vec();
     if let Err(e) = ws_sink
@@ -81,8 +81,7 @@ async fn main() {
         ))
         .await
     {
-        error!("Failed to send enable message: {}", e);
-        return;
+        panic!("Failed to send enable message: {}", e);
     }
 
     // Before sending move command, we need to set initialize the base first.
@@ -100,14 +99,14 @@ async fn main() {
         .send(tungstenite::Message::Binary(enable_bytes.into()))
         .await
     {
-        error!("Failed to send enable message: {}", e);
-        return;
+        panic!("Failed to send enable message: {}", e);
     }
-    loop {
+    let start_time = std::time::Instant::now();
+    while start_time.elapsed() < std::time::Duration::from_secs(10) {
         // You can also use tokio's tick if you want
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
-        // Down, base command, command, simple_move_command, vx = 0.1, vy = 0, w = 0
+        // Down, base command, command, simple_move_command, vx = 0.0, vy = 0, w = 0.1
         let move_message = base_backend::ApiDown {
             down: Some(base_backend::api_down::Down::BaseCommand(
                 base_backend::BaseCommand {
@@ -116,9 +115,9 @@ async fn main() {
                             command: Some(
                                 base_backend::simple_base_move_command::Command::XyzSpeed(
                                     base_backend::XyzSpeed {
-                                        speed_x: 0.1,
+                                        speed_x: 0.0,
                                         speed_y: 0.0,
-                                        speed_z: 0.0,
+                                        speed_z: 0.1,
                                     },
                                 ),
                             ),
@@ -135,8 +134,26 @@ async fn main() {
             .send(tungstenite::Message::Binary(move_bytes.into()))
             .await
         {
-            error!("Failed to send move message: {}", e);
-            break;
+            panic!("Failed to send move message: {}", e);
         }
     }
+    let deinitialize_message = base_backend::ApiDown {
+        down: Some(base_backend::api_down::Down::BaseCommand(
+            base_backend::BaseCommand {
+                command: Some(base_backend::base_command::Command::ApiControlInitialize(
+                    false,
+                )),
+            },
+        )),
+    };
+    // This is essential because if base lost control for a long time, it will enter protected state.
+    // So lets tell the base we are finishing our control session.
+    let deinitialize_bytes = deinitialize_message.encode_to_vec();
+    if let Err(e) = ws_sink
+        .send(tungstenite::Message::Binary(deinitialize_bytes.into()))
+        .await
+    {
+        panic!("Failed to send deinitialize message: {}", e);
+    }
+    info!("Successfully deinitialized base");
 }
