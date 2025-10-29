@@ -4,11 +4,16 @@
 
 ### Pre-requisites
 
-1. **Install `protoc`**
+#### **Install `protoc`**
 
-    We highly recommend you to use **`protoc-27.1`** since we have fully tested it in both `x86_64` and `arm64` archs.
+1. Install protoc from package manager (Recommended only for Debian13/Ubuntu24.04)
+    ```bash
+    sudo apt install protobuf-compiler
+    ```
 
-    You can use the binary installation method below to install **`protoc-27.1`**.
+2. Install protoc from Github Releases (Recommended Ubuntu22.04 and below)
+    
+    Just choose a suitable version and install it. Here below is an example of installing `protoc-27.1`. 
 
     ```bash
     # For Linux x86_64
@@ -22,9 +27,9 @@
     rm protoc-27.1-linux-aarch_64.zip
     
     # Verify installation
-    protoc --version  # Should display libprotoc 27.1
+    protoc --version # Should be or more than 3.21.12
     ```
-2. **Install dependencies in your environment..**
+#### Install python dependencies
    
     ```bash
     python3 -m pip install -r requirements.txt

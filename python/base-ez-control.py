@@ -36,9 +36,9 @@ async def send(websocket):
 
         while True:
             api_down = public_api_down_pb2.APIDown()
-            api_down.base_command.simple_move_command.xyz_speed.speed_x = 0.1
+            api_down.base_command.simple_move_command.xyz_speed.speed_x = 0.0
             api_down.base_command.simple_move_command.xyz_speed.speed_y = 0.0
-            api_down.base_command.simple_move_command.xyz_speed.speed_z = 0.0
+            api_down.base_command.simple_move_command.xyz_speed.speed_z = 0.1
 
             await websocket.send(api_down.SerializeToString())
             await asyncio.sleep(0.02)
