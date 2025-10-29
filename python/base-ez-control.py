@@ -1,71 +1,92 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
-################################################################
-# Copyright 2025 Jecjune. All rights reserved.
-# Author: Jecjune zejun.chen@hexfellow.com
-# Date  : 2025-8-1
-################################################################
 
-# A Simple Test for HexDeviceApi
-
-import sys
 import argparse
-import numpy as np
-import logging
-import hex_device
-from hex_device import HexDeviceApi
-import time
-from hex_device.chassis import Chassis
-from hex_device.motor_base import CommandType
-from hex_device.arm_archer import ArmArcher
-from hex_device.motor_base import MitMotorCommand
-from hex_device.hands import Hands
-from hex_device.motor_base import public_api_types_pb2
+import asyncio
+from websockets.asyncio.client import connect
+from generated import public_api_down_pb2, public_api_up_pb2, public_api_types_pb2
 
-def main():
-    # Parse command line arguments
+async def receive(websocket):
+    try:
+        async for message in websocket:
+            if isinstance(message, bytes):
+                api_up = public_api_up_pb2.APIUp()
+                api_up.ParseFromString(message)
+
+                if api_up.HasField('base_status'):
+                    base_status = api_up.base_status
+
+                    if base_status.HasField('estimated_odometry'):
+                        odometry = base_status.estimated_odometry
+                        print(f"spd=({odometry.speed_x}, {odometry.speed_y}, {odometry.speed_z})")
+    except asyncio.CancelledError:
+        pass
+
+async def send(websocket):
+    try:
+        api_down = public_api_down_pb2.APIDown()
+        api_down.set_report_frequency = public_api_types_pb2.ReportFrequency.Rf50Hz
+        await websocket.send(api_down.SerializeToString())
+        await asyncio.sleep(0.1)
+
+        api_down = public_api_down_pb2.APIDown()
+        api_down.base_command.api_control_initialize = True
+        await websocket.send(api_down.SerializeToString())
+        await asyncio.sleep(0.1)
+
+        while True:
+            api_down = public_api_down_pb2.APIDown()
+            api_down.base_command.simple_move_command.xyz_speed.speed_x = 0.1
+            api_down.base_command.simple_move_command.xyz_speed.speed_y = 0.0
+            api_down.base_command.simple_move_command.xyz_speed.speed_z = 0.0
+
+            await websocket.send(api_down.SerializeToString())
+            await asyncio.sleep(0.02)
+    except asyncio.CancelledError:
+        pass
+
+async def send_close(websocket):
+    try:
+        api_down = public_api_down_pb2.APIDown()
+        api_down.base_command.api_control_initialize = False
+        await websocket.send(api_down.SerializeToString())
+
+    except asyncio.CancelledError:
+        pass
+
+async def main():
     parser = argparse.ArgumentParser(
-        description='Hexapod robotic arm trajectory planning and execution test',
+        description='base-ez-control',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument(
-        '--url', 
+        '--url',
         metavar='URL',
-        default="ws://172.18.28.201:8439",
-        help='WebSocket URL for HEX device connection'
+        default="ws://0.0.0.0:8439",
+        help='WebSocket url for robot connection'
     )
     args = parser.parse_args()
-    
-    # Init HexDeviceApi
-    api = HexDeviceApi(ws_url=args.url, control_hz=250)
 
-    try:
-        while True:
-            if api.is_api_exit():
-                print("Public API has exited.")
-                break
-            else:                
-                for device in api.device_list:
-                    if isinstance(device, Chassis):
-                        if device.has_new_data():
-                            print(f"vehicle position: {device.get_vehicle_position()}")
-                            device.start() # Actully only have to call once, but lets be lazy and call it every time XD
-                            device.set_vehicle_speed(0.0, 0.0, 0.1)
-            time.sleep(0.002)
+    print(f"Connecting to {args.url}")
 
-    except KeyboardInterrupt:
-        print("Received Ctrl-C.")
-        for device in api.device_list:
-            if isinstance(device, Chassis):
-                device.stop() # Saves base from timeout error
-        time.sleep(0.1)
-        api.close()
-    finally:
-        pass
+    async with connect(args.url) as websocket:
+        print("Connected")
 
-    print("Resources have been cleaned up.")
-    exit(0)
+        recv_task = asyncio.create_task(receive(websocket))
+        send_task = asyncio.create_task(send(websocket))
 
-
+        try:
+            await asyncio.gather(recv_task, send_task)
+        except asyncio.CancelledError:
+            print("\nReceived Ctrl-C")
+            recv_task.cancel()
+            send_task.cancel()
+            await send_close(websocket)
+            await websocket.close()
+            print("Connection closed")
+ 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
