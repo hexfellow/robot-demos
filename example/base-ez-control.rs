@@ -9,6 +9,8 @@ use log::{error, info, warn};
 use prost::Message;
 use tokio_tungstenite::MaybeTlsStream;
 
+const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
+
 #[derive(Parser)]
 struct Args {
     #[arg(help = "WebSocket URL to connect to (e.g. ws://localhost:8439)")]
@@ -51,6 +53,14 @@ async fn main() {
                     let msg = base_backend::ApiUp::decode(bytes).unwrap();
                     if let Some(log) = msg.log {
                         warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
+                    }
+                    if msg.protocol_major_version != ACCEPTABLE_PROTOCOL_MAJOR_VERSION {
+                        warn!(
+                            "Protocol major version is not {}, current version: {}. This might cause compatibility issues. Consider upgrading the base firmware.",
+                            ACCEPTABLE_PROTOCOL_MAJOR_VERSION, msg.protocol_major_version
+                        );
+                        // If protocol major version does not match, lets just stop printing odometry.
+                        return;
                     }
                     match msg.status {
                         Some(base_backend::api_up::Status::BaseStatus(base_status)) => {
