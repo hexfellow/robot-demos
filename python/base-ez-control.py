@@ -16,7 +16,7 @@ async def receive(websocket):
                 api_up = public_api_up_pb2.APIUp()
                 api_up.ParseFromString(message)
                 if api_up.HasField("log"):
-                    print(f"\033[33mWARN:Log from base: {api_up.log}\033[0m")
+                    print(f"\033[33mWARN:Log from base: {api_up.log}\033[0m") #Having a log usually means something went boom, so lets print it.
 
                 if api_up.protocol_major_version != ACCEPTABLE_PROTOCOL_MAJOR_VERSION:
                     if version_check == False:
