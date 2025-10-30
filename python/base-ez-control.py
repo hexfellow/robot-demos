@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding:utf-8 -*-
-
+import sys
 import argparse
 import asyncio
 import socket
@@ -111,6 +111,9 @@ async def main():
             print("Successfully deinitialized base")
 
 if __name__ == "__main__":
+    if sys.version_info < (3, 10):
+        print("This script requires Python 3.10 or higher")
+        sys.exit(1)
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
