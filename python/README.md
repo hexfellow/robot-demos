@@ -31,13 +31,14 @@
     ```
 #### Install python dependencies
    
-    ```bash
-    python3 -m pip install -r requirements.txt
-    ```
+```bash
+python3 -m pip install -r requirements.txt
+```
 
 ### Base Ez Control
 
-Minimum control demo for base. Just commands base to rotate at 0.1 rad/s, and print estimated odometry. Nothing else.
+Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 10 seconds while printing estimated odometry. In the end, deinitialize the base correctly.
+
 
 ### Usage
 
