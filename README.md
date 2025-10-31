@@ -5,7 +5,7 @@ This repo is meant to:
 - Provide a minimal example to control a robot.
 
 This repo is NOT meant to:
-- Let the developers skip reading the CODE. PLEASE UNDERSTAND THE CODE AND ITS COMMENTS.
+- Let the developers skip reading the CODE. PLEASE UNDERSTAND THE CODE AND ITS COMMENTS YOURSELF FIRST. We will not explain any code in this repo. 
 - Demonstrate the full capabilities of the robot. For that purpose, check the community showcases.
 
 Remember to clone this repo recursively since there are submodules in this repo.
@@ -15,6 +15,9 @@ git clone --recursive https://github.com/hexfellow/robot-demos
 
 ## Python demo
 Go to [python](python) folder to see the python demos.
+
+<!-- ## C demo
+Go to [c](c) folder to see the c demos. -->
 
 ## Rust demo
 
