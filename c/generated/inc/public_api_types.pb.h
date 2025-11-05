@@ -49,6 +49,13 @@ typedef enum _RobotType {
     RobotType_RtPureForwardOnly = 100
 } RobotType;
 
+typedef enum _SecondaryDeviceType {
+    SecondaryDeviceType_SdtUnknown = 0,
+    SecondaryDeviceType_SdtHandGp100 = 1,
+    SecondaryDeviceType_SdtGamepad = 2,
+    SecondaryDeviceType_SdtImuY200 = 3
+} SecondaryDeviceType;
+
 /* Base State */
 typedef enum _BaseState {
     BaseState_BsParked = 0,
@@ -65,19 +72,6 @@ typedef enum _LiftState {
     LiftState_LsOvertakeControl = 3,
     LiftState_LsEmergencyStop = 4
 } LiftState;
-
-/* ////// Arm ////////// */
-typedef enum _ArmMode {
-    ArmMode_AmBrake = 0,
-    ArmMode_AmApiControl = 1,
-    ArmMode_AmFreeDrag = 2, /* Floating, ZeroForce feel, etc */
-    ArmMode_AmZeroCurrent = 3
-} ArmMode;
-
-typedef enum _HandType {
-    HandType_HtInvalid = 0,
-    HandType_HtGp100 = 1
-} HandType;
 
 typedef enum _ReportFrequency {
     ReportFrequency_Rf1000Hz = 0,
@@ -171,9 +165,18 @@ typedef struct _LinearLiftCommand {
 } LinearLiftCommand;
 
 typedef struct _HandStatus {
-    HandType hand_type;
     pb_callback_t motor_status;
 } HandStatus;
+
+/* Putting an empty message here for now.
+ Making it possible to extend in the future, e.g. adding percentage of friction compensation. */
+typedef struct _ArmApiFreeDragCommand {
+    char dummy_field;
+} ArmApiFreeDragCommand;
+
+typedef struct _ArmApiZeroCurrentCommand {
+    char dummy_field;
+} ArmApiZeroCurrentCommand;
 
 typedef struct _GamepadRead {
     float left_stick_x;
@@ -295,7 +298,6 @@ typedef struct _LinearLiftStatus {
 typedef struct _ArmStatus {
     /* Weather the API control is initialized. */
     bool api_control_initialized;
-    ArmMode current_mode;
     bool calibrated;
     pb_callback_t motor_status;
     /* Arm is special. Api timeout will not be treated as fatal error, it will just send a log and disable it self, releasing the session id.
@@ -369,20 +371,26 @@ typedef struct _HandCommand {
     MotorTargets motor_targets;
 } HandCommand;
 
+typedef struct _ArmApiControlCommand {
+    pb_size_t which_command;
+    union {
+        /* Lowest API. Gives you direct control over motors. */
+        MotorTargets motor_targets;
+        ArmApiFreeDragCommand arm_api_free_drag_command;
+        ArmApiZeroCurrentCommand arm_api_zero_current_command;
+    } command;
+} ArmApiControlCommand;
+
 typedef struct _ArmExclusiveCommand {
     pb_size_t which_exclusive_command;
     union {
         /* Only after api_control_initialize is set, can the vehicle be controlled by the API. */
         bool api_control_initialize;
-        /* If currently has a clearable parking stop, the parking stop state will be cleared. */
-        bool clear_parking_stop;
-        /* You have to continuesly send this command if you want to use api control. (Start sending these commands and keep sending it first, then send api_control_initialize)
-     The API does not support simple speed control. */
-        MotorTargets motor_targets;
         /* Just in case */
         bool calibrate;
+        /* You have to continuesly send this command if you want to use api control. */
+        ArmApiControlCommand arm_api_control_command;
     } exclusive_command;
-    ArmMode target_mode;
 } ArmExclusiveCommand;
 
 typedef struct _ArmCommand {
@@ -421,8 +429,13 @@ typedef struct _MotorStatus {
 
 /* Hand, 3+3 Arms, etc */
 typedef struct _SecondaryDeviceStatus {
-    /* Can be used to tell from different devices, e.g. Imu1, Imu2, Hand1, Hand2, Gamepad1, Gamepad2, etc. */
+    /* Can be used to tell from different devices, e.g. Imu1, Imu2, Hand1, Hand2, Gamepad1, Gamepad2, etc.
+ This number should not change once allocated.
+ It is possible for this number to be dynamically allocated, but we don't see any need for now. Therefore for all RobotType we currently have,
+   all of its SecondaryDevices will have certain device_id. (e.g. For Base, IMU is always 1, Gamepad is always 2, etc.)
+ When sending command down, device_id must match the device_id in the command. */
     uint32_t device_id;
+    SecondaryDeviceType device_type;
     pb_size_t which_status;
     union {
         /* Imu's raw data. Independent of mounting position. This is tricky because different robot types have different mounting positions. Not all robot types have imu.
@@ -437,6 +450,15 @@ typedef struct _SecondaryDeviceStatus {
     } status;
 } SecondaryDeviceStatus;
 
+typedef struct _SecondaryDeviceCommand {
+    /* Basically the same as device_id in SecondaryDeviceStatus. */
+    uint32_t device_id;
+    pb_size_t which_command;
+    union {
+        HandCommand hand_command;
+    } command;
+} SecondaryDeviceCommand;
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -447,6 +469,10 @@ extern "C" {
 #define _RobotType_MAX RobotType_RtPureForwardOnly
 #define _RobotType_ARRAYSIZE ((RobotType)(RobotType_RtPureForwardOnly+1))
 
+#define _SecondaryDeviceType_MIN SecondaryDeviceType_SdtUnknown
+#define _SecondaryDeviceType_MAX SecondaryDeviceType_SdtImuY200
+#define _SecondaryDeviceType_ARRAYSIZE ((SecondaryDeviceType)(SecondaryDeviceType_SdtImuY200+1))
+
 #define _BaseState_MIN BaseState_BsParked
 #define _BaseState_MAX BaseState_BsEmergencyStop
 #define _BaseState_ARRAYSIZE ((BaseState)(BaseState_BsEmergencyStop+1))
@@ -454,14 +480,6 @@ extern "C" {
 #define _LiftState_MIN LiftState_LsBrake
 #define _LiftState_MAX LiftState_LsEmergencyStop
 #define _LiftState_ARRAYSIZE ((LiftState)(LiftState_LsEmergencyStop+1))
-
-#define _ArmMode_MIN ArmMode_AmBrake
-#define _ArmMode_MAX ArmMode_AmZeroCurrent
-#define _ArmMode_ARRAYSIZE ((ArmMode)(ArmMode_AmZeroCurrent+1))
-
-#define _HandType_MIN HandType_HtInvalid
-#define _HandType_MAX HandType_HtGp100
-#define _HandType_ARRAYSIZE ((HandType)(HandType_HtGp100+1))
 
 #define _ReportFrequency_MIN ReportFrequency_Rf1000Hz
 #define _ReportFrequency_MAX ReportFrequency_Rf250Hz
@@ -493,13 +511,13 @@ extern "C" {
 #define LinearLiftStatus_state_ENUMTYPE LiftState
 
 
-#define ArmStatus_current_mode_ENUMTYPE ArmMode
-
-#define HandStatus_hand_type_ENUMTYPE HandType
 
 
 
-#define ArmExclusiveCommand_target_mode_ENUMTYPE ArmMode
+
+
+
+
 
 
 
@@ -514,6 +532,8 @@ extern "C" {
 
 #define MotorStatus_error_ENUMTYPE MotorError
 
+#define SecondaryDeviceStatus_device_type_ENUMTYPE SecondaryDeviceType
+
 
 
 /* Initializer values for message structs */
@@ -527,11 +547,14 @@ extern "C" {
 #define RotateLiftCommand_init_default           {0, {0}}
 #define LinearLiftStatus_init_default            {0, _LiftState_MIN, 0, 0, 0, 0, 0, false, ParkingStopDetail_init_default, false, 0}
 #define LinearLiftCommand_init_default           {0, {0}}
-#define ArmStatus_init_default                   {0, _ArmMode_MIN, 0, {{NULL}, NULL}, false, ParkingStopDetail_init_default, 0}
-#define HandStatus_init_default                  {_HandType_MIN, {{NULL}, NULL}}
+#define ArmStatus_init_default                   {0, 0, {{NULL}, NULL}, false, ParkingStopDetail_init_default, 0}
+#define HandStatus_init_default                  {{{NULL}, NULL}}
 #define HandCommand_init_default                 {false, MotorTargets_init_default}
+#define ArmApiFreeDragCommand_init_default       {0}
+#define ArmApiZeroCurrentCommand_init_default    {0}
+#define ArmApiControlCommand_init_default        {0, {MotorTargets_init_default}}
 #define ArmSharedCommand_init_default            {0, {0}}
-#define ArmExclusiveCommand_init_default         {0, {0}, _ArmMode_MIN}
+#define ArmExclusiveCommand_init_default         {0, {0}}
 #define ArmCommand_init_default                  {0, {ArmExclusiveCommand_init_default}}
 #define GamepadRead_init_default                 {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define ImuAcceleration_init_default             {0, 0, 0}
@@ -543,7 +566,8 @@ extern "C" {
 #define MitMotorTarget_init_default              {0, 0, 0, 0, 0}
 #define MotorTargets_init_default                {{{NULL}, NULL}}
 #define MotorStatus_init_default                 {0, 0, 0, 0, 0, {{NULL}, NULL}, false, SingleMotorTarget_init_default, false, 0, false, 0, false, 0}
-#define SecondaryDeviceStatus_init_default       {0, 0, {ImuData_init_default}}
+#define SecondaryDeviceStatus_init_default       {0, _SecondaryDeviceType_MIN, 0, {ImuData_init_default}}
+#define SecondaryDeviceCommand_init_default      {0, 0, {HandCommand_init_default}}
 #define BaseEstimatedOdometry_init_zero          {0, 0, 0, 0, 0, 0}
 #define BaseStatus_init_zero                     {_BaseState_MIN, 0, 0, 0, {{NULL}, NULL}, 0, false, 0, false, ParkingStopDetail_init_zero, false, _WarningCategory_MIN, false, BaseEstimatedOdometry_init_zero}
 #define XyzSpeed_init_zero                       {0, 0, 0}
@@ -554,11 +578,14 @@ extern "C" {
 #define RotateLiftCommand_init_zero              {0, {0}}
 #define LinearLiftStatus_init_zero               {0, _LiftState_MIN, 0, 0, 0, 0, 0, false, ParkingStopDetail_init_zero, false, 0}
 #define LinearLiftCommand_init_zero              {0, {0}}
-#define ArmStatus_init_zero                      {0, _ArmMode_MIN, 0, {{NULL}, NULL}, false, ParkingStopDetail_init_zero, 0}
-#define HandStatus_init_zero                     {_HandType_MIN, {{NULL}, NULL}}
+#define ArmStatus_init_zero                      {0, 0, {{NULL}, NULL}, false, ParkingStopDetail_init_zero, 0}
+#define HandStatus_init_zero                     {{{NULL}, NULL}}
 #define HandCommand_init_zero                    {false, MotorTargets_init_zero}
+#define ArmApiFreeDragCommand_init_zero          {0}
+#define ArmApiZeroCurrentCommand_init_zero       {0}
+#define ArmApiControlCommand_init_zero           {0, {MotorTargets_init_zero}}
 #define ArmSharedCommand_init_zero               {0, {0}}
-#define ArmExclusiveCommand_init_zero            {0, {0}, _ArmMode_MIN}
+#define ArmExclusiveCommand_init_zero            {0, {0}}
 #define ArmCommand_init_zero                     {0, {ArmExclusiveCommand_init_zero}}
 #define GamepadRead_init_zero                    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define ImuAcceleration_init_zero                {0, 0, 0}
@@ -570,7 +597,8 @@ extern "C" {
 #define MitMotorTarget_init_zero                 {0, 0, 0, 0, 0}
 #define MotorTargets_init_zero                   {{{NULL}, NULL}}
 #define MotorStatus_init_zero                    {0, 0, 0, 0, 0, {{NULL}, NULL}, false, SingleMotorTarget_init_zero, false, 0, false, 0, false, 0}
-#define SecondaryDeviceStatus_init_zero          {0, 0, {ImuData_init_zero}}
+#define SecondaryDeviceStatus_init_zero          {0, _SecondaryDeviceType_MIN, 0, {ImuData_init_zero}}
+#define SecondaryDeviceCommand_init_zero         {0, 0, {HandCommand_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define BaseEstimatedOdometry_speed_x_tag        1
@@ -590,7 +618,6 @@ extern "C" {
 #define LinearLiftCommand_target_pos_tag         2
 #define LinearLiftCommand_brake_tag              3
 #define LinearLiftCommand_set_speed_tag          4
-#define HandStatus_hand_type_tag                 1
 #define HandStatus_motor_status_tag              2
 #define GamepadRead_left_stick_x_tag             1
 #define GamepadRead_left_stick_y_tag             2
@@ -654,7 +681,6 @@ extern "C" {
 #define LinearLiftStatus_parking_stop_detail_tag 10
 #define LinearLiftStatus_custom_button_pressed_tag 11
 #define ArmStatus_api_control_initialized_tag    1
-#define ArmStatus_current_mode_tag               2
 #define ArmStatus_calibrated_tag                 3
 #define ArmStatus_motor_status_tag               4
 #define ArmStatus_parking_stop_detail_tag        5
@@ -680,11 +706,12 @@ extern "C" {
 #define RotateLiftCommand_motor_targets_tag      2
 #define RotateLiftCommand_runtime_config_tag     3
 #define HandCommand_motor_targets_tag            1
+#define ArmApiControlCommand_motor_targets_tag   1
+#define ArmApiControlCommand_arm_api_free_drag_command_tag 2
+#define ArmApiControlCommand_arm_api_zero_current_command_tag 3
 #define ArmExclusiveCommand_api_control_initialize_tag 1
-#define ArmExclusiveCommand_clear_parking_stop_tag 2
-#define ArmExclusiveCommand_motor_targets_tag    3
 #define ArmExclusiveCommand_calibrate_tag        4
-#define ArmExclusiveCommand_target_mode_tag      5
+#define ArmExclusiveCommand_arm_api_control_command_tag 6
 #define ArmCommand_arm_exclusive_command_tag     1
 #define ArmCommand_arm_shared_command_tag        2
 #define MotorStatus_torque_tag                   2
@@ -698,9 +725,12 @@ extern "C" {
 #define MotorStatus_motor_temperature_tag        12
 #define MotorStatus_voltage_tag                  13
 #define SecondaryDeviceStatus_device_id_tag      1
+#define SecondaryDeviceStatus_device_type_tag    2
 #define SecondaryDeviceStatus_imu_data_tag       11
 #define SecondaryDeviceStatus_hand_status_tag    12
 #define SecondaryDeviceStatus_gamepad_read_tag   13
+#define SecondaryDeviceCommand_device_id_tag     1
+#define SecondaryDeviceCommand_hand_command_tag  12
 
 /* Struct field encoding specification for nanopb */
 #define BaseEstimatedOdometry_FIELDLIST(X, a) \
@@ -805,7 +835,6 @@ X(a, STATIC,   ONEOF,    UINT32,   (command,set_speed,command.set_speed),   4)
 
 #define ArmStatus_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     api_control_initialized,   1) \
-X(a, STATIC,   SINGULAR, UENUM,    current_mode,      2) \
 X(a, STATIC,   SINGULAR, BOOL,     calibrated,        3) \
 X(a, CALLBACK, REPEATED, MESSAGE,  motor_status,      4) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  parking_stop_detail,   5) \
@@ -816,7 +845,6 @@ X(a, STATIC,   SINGULAR, UINT32,   session_holder,    6)
 #define ArmStatus_parking_stop_detail_MSGTYPE ParkingStopDetail
 
 #define HandStatus_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    hand_type,         1) \
 X(a, CALLBACK, REPEATED, MESSAGE,  motor_status,      2)
 #define HandStatus_CALLBACK pb_default_field_callback
 #define HandStatus_DEFAULT NULL
@@ -828,6 +856,26 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  motor_targets,     1)
 #define HandCommand_DEFAULT NULL
 #define HandCommand_motor_targets_MSGTYPE MotorTargets
 
+#define ArmApiFreeDragCommand_FIELDLIST(X, a) \
+
+#define ArmApiFreeDragCommand_CALLBACK NULL
+#define ArmApiFreeDragCommand_DEFAULT NULL
+
+#define ArmApiZeroCurrentCommand_FIELDLIST(X, a) \
+
+#define ArmApiZeroCurrentCommand_CALLBACK NULL
+#define ArmApiZeroCurrentCommand_DEFAULT NULL
+
+#define ArmApiControlCommand_FIELDLIST(X, a) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (command,motor_targets,command.motor_targets),   1) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (command,arm_api_free_drag_command,command.arm_api_free_drag_command),   2) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (command,arm_api_zero_current_command,command.arm_api_zero_current_command),   3)
+#define ArmApiControlCommand_CALLBACK NULL
+#define ArmApiControlCommand_DEFAULT NULL
+#define ArmApiControlCommand_command_motor_targets_MSGTYPE MotorTargets
+#define ArmApiControlCommand_command_arm_api_free_drag_command_MSGTYPE ArmApiFreeDragCommand
+#define ArmApiControlCommand_command_arm_api_zero_current_command_MSGTYPE ArmApiZeroCurrentCommand
+
 #define ArmSharedCommand_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    BOOL,     (command,clear_parking_stop,command.clear_parking_stop),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (command,enter_parking_stop,command.enter_parking_stop),   2)
@@ -837,13 +885,11 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (command,enter_parking_stop,command.enter_par
 
 #define ArmExclusiveCommand_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    BOOL,     (exclusive_command,api_control_initialize,exclusive_command.api_control_initialize),   1) \
-X(a, STATIC,   ONEOF,    BOOL,     (exclusive_command,clear_parking_stop,exclusive_command.clear_parking_stop),   2) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (exclusive_command,motor_targets,exclusive_command.motor_targets),   3) \
 X(a, STATIC,   ONEOF,    BOOL,     (exclusive_command,calibrate,exclusive_command.calibrate),   4) \
-X(a, STATIC,   SINGULAR, UENUM,    target_mode,       5)
+X(a, STATIC,   ONEOF,    MESSAGE,  (exclusive_command,arm_api_control_command,exclusive_command.arm_api_control_command),   6)
 #define ArmExclusiveCommand_CALLBACK NULL
 #define ArmExclusiveCommand_DEFAULT NULL
-#define ArmExclusiveCommand_exclusive_command_motor_targets_MSGTYPE MotorTargets
+#define ArmExclusiveCommand_exclusive_command_arm_api_control_command_MSGTYPE ArmApiControlCommand
 
 #define ArmCommand_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (command,arm_exclusive_command,command.arm_exclusive_command),   1) \
@@ -958,6 +1004,7 @@ X(a, STATIC,   OPTIONAL, FLOAT,    voltage,          13)
 
 #define SecondaryDeviceStatus_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   device_id,         1) \
+X(a, STATIC,   SINGULAR, UENUM,    device_type,       2) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (status,imu_data,status.imu_data),  11) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (status,hand_status,status.hand_status),  12) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (status,gamepad_read,status.gamepad_read),  13)
@@ -966,6 +1013,13 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (status,gamepad_read,status.gamepad_read),  1
 #define SecondaryDeviceStatus_status_imu_data_MSGTYPE ImuData
 #define SecondaryDeviceStatus_status_hand_status_MSGTYPE HandStatus
 #define SecondaryDeviceStatus_status_gamepad_read_MSGTYPE GamepadRead
+
+#define SecondaryDeviceCommand_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   device_id,         1) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (command,hand_command,command.hand_command),  12)
+#define SecondaryDeviceCommand_CALLBACK NULL
+#define SecondaryDeviceCommand_DEFAULT NULL
+#define SecondaryDeviceCommand_command_hand_command_MSGTYPE HandCommand
 
 extern const pb_msgdesc_t BaseEstimatedOdometry_msg;
 extern const pb_msgdesc_t BaseStatus_msg;
@@ -980,6 +1034,9 @@ extern const pb_msgdesc_t LinearLiftCommand_msg;
 extern const pb_msgdesc_t ArmStatus_msg;
 extern const pb_msgdesc_t HandStatus_msg;
 extern const pb_msgdesc_t HandCommand_msg;
+extern const pb_msgdesc_t ArmApiFreeDragCommand_msg;
+extern const pb_msgdesc_t ArmApiZeroCurrentCommand_msg;
+extern const pb_msgdesc_t ArmApiControlCommand_msg;
 extern const pb_msgdesc_t ArmSharedCommand_msg;
 extern const pb_msgdesc_t ArmExclusiveCommand_msg;
 extern const pb_msgdesc_t ArmCommand_msg;
@@ -994,6 +1051,7 @@ extern const pb_msgdesc_t MitMotorTarget_msg;
 extern const pb_msgdesc_t MotorTargets_msg;
 extern const pb_msgdesc_t MotorStatus_msg;
 extern const pb_msgdesc_t SecondaryDeviceStatus_msg;
+extern const pb_msgdesc_t SecondaryDeviceCommand_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define BaseEstimatedOdometry_fields &BaseEstimatedOdometry_msg
@@ -1009,6 +1067,9 @@ extern const pb_msgdesc_t SecondaryDeviceStatus_msg;
 #define ArmStatus_fields &ArmStatus_msg
 #define HandStatus_fields &HandStatus_msg
 #define HandCommand_fields &HandCommand_msg
+#define ArmApiFreeDragCommand_fields &ArmApiFreeDragCommand_msg
+#define ArmApiZeroCurrentCommand_fields &ArmApiZeroCurrentCommand_msg
+#define ArmApiControlCommand_fields &ArmApiControlCommand_msg
 #define ArmSharedCommand_fields &ArmSharedCommand_msg
 #define ArmExclusiveCommand_fields &ArmExclusiveCommand_msg
 #define ArmCommand_fields &ArmCommand_msg
@@ -1023,6 +1084,7 @@ extern const pb_msgdesc_t SecondaryDeviceStatus_msg;
 #define MotorTargets_fields &MotorTargets_msg
 #define MotorStatus_fields &MotorStatus_msg
 #define SecondaryDeviceStatus_fields &SecondaryDeviceStatus_msg
+#define SecondaryDeviceCommand_fields &SecondaryDeviceCommand_msg
 
 /* Maximum encoded size of messages (where known) */
 /* BaseStatus_size depends on runtime parameters */
@@ -1034,6 +1096,7 @@ extern const pb_msgdesc_t SecondaryDeviceStatus_msg;
 /* ArmStatus_size depends on runtime parameters */
 /* HandStatus_size depends on runtime parameters */
 /* HandCommand_size depends on runtime parameters */
+/* ArmApiControlCommand_size depends on runtime parameters */
 /* ArmSharedCommand_size depends on runtime parameters */
 /* ArmExclusiveCommand_size depends on runtime parameters */
 /* ArmCommand_size depends on runtime parameters */
@@ -1041,6 +1104,9 @@ extern const pb_msgdesc_t SecondaryDeviceStatus_msg;
 /* MotorTargets_size depends on runtime parameters */
 /* MotorStatus_size depends on runtime parameters */
 /* SecondaryDeviceStatus_size depends on runtime parameters */
+/* SecondaryDeviceCommand_size depends on runtime parameters */
+#define ArmApiFreeDragCommand_size               0
+#define ArmApiZeroCurrentCommand_size            0
 #define BaseEstimatedOdometry_size               42
 #define GamepadRead_size                         63
 #define ImuAcceleration_size                     15

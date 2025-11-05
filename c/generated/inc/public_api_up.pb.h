@@ -46,8 +46,9 @@ typedef struct _APIUp {
     /* Secondary device status. Optional. Including Imu, Hand, Gamepad, etc.
  次级设备状态。可选。包括 Imu, Hand, Gamepad 等。 */
     pb_callback_t secondary_device_status;
-    /* Rolls with potential breaking changes. e.g. Refactoring the message structure, removing deprecated robot types, etc. */
-    uint32_t protocol_major_version;
+    /* Rolls with potential breaking changes. e.g. Refactoring the message structure, removing deprecated robot types, etc.
+ 变更意味着 breaking change。 */
+    uint32_t protocol_major_version; /* Current value is 1. */
     /* Rolls with potential non-breaking changes. e.g. adding new robot types. */
     uint32_t protocol_minor_version;
 } APIUp;

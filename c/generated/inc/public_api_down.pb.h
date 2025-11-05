@@ -33,9 +33,9 @@ typedef struct _APIDown {
         /* Sets report frequency for THIS connection. Will not affect other connections.
      设置本连接的报告频率。不会影响其他连接。 */
         ReportFrequency set_report_frequency;
-        /* Hand command. Optional.
-     机械手命令。可选。 */
-        HandCommand hand_command;
+        /* There might be multiple secondary devices. Send commands to different devices separately.
+     可能有多台次级设备。请分别发送命令到不同的设备。 */
+        SecondaryDeviceCommand secondary_device_command;
     } down;
 } APIDown;
 
@@ -54,7 +54,7 @@ extern "C" {
 #define APIDown_arm_command_tag                  3
 #define APIDown_rotate_lift_command_tag          4
 #define APIDown_set_report_frequency_tag         5
-#define APIDown_hand_command_tag                 6
+#define APIDown_secondary_device_command_tag     7
 
 /* Struct field encoding specification for nanopb */
 #define APIDown_FIELDLIST(X, a) \
@@ -63,14 +63,14 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (down,linear_lift_command,down.linear_lift_co
 X(a, STATIC,   ONEOF,    MESSAGE,  (down,arm_command,down.arm_command),   3) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (down,rotate_lift_command,down.rotate_lift_command),   4) \
 X(a, STATIC,   ONEOF,    UENUM,    (down,set_report_frequency,down.set_report_frequency),   5) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (down,hand_command,down.hand_command),   6)
+X(a, STATIC,   ONEOF,    MESSAGE,  (down,secondary_device_command,down.secondary_device_command),   7)
 #define APIDown_CALLBACK NULL
 #define APIDown_DEFAULT NULL
 #define APIDown_down_base_command_MSGTYPE BaseCommand
 #define APIDown_down_linear_lift_command_MSGTYPE LinearLiftCommand
 #define APIDown_down_arm_command_MSGTYPE ArmCommand
 #define APIDown_down_rotate_lift_command_MSGTYPE RotateLiftCommand
-#define APIDown_down_hand_command_MSGTYPE HandCommand
+#define APIDown_down_secondary_device_command_MSGTYPE SecondaryDeviceCommand
 
 extern const pb_msgdesc_t APIDown_msg;
 
@@ -78,10 +78,10 @@ extern const pb_msgdesc_t APIDown_msg;
 #define APIDown_fields &APIDown_msg
 
 /* Maximum encoded size of messages (where known) */
-#if defined(BaseCommand_size) && defined(ArmCommand_size) && defined(RotateLiftCommand_size) && defined(HandCommand_size)
-union APIDown_down_size_union {char f1[(6 + BaseCommand_size)]; char f3[(6 + ArmCommand_size)]; char f4[(6 + RotateLiftCommand_size)]; char f6[(6 + HandCommand_size)]; char f0[13];};
+#if defined(BaseCommand_size) && defined(ArmCommand_size) && defined(RotateLiftCommand_size) && defined(SecondaryDeviceCommand_size)
+union APIDown_down_size_union {char f1[(6 + BaseCommand_size)]; char f3[(6 + ArmCommand_size)]; char f4[(6 + RotateLiftCommand_size)]; char f7[(6 + SecondaryDeviceCommand_size)]; char f0[13];};
 #endif
-#if defined(BaseCommand_size) && defined(ArmCommand_size) && defined(RotateLiftCommand_size) && defined(HandCommand_size)
+#if defined(BaseCommand_size) && defined(ArmCommand_size) && defined(RotateLiftCommand_size) && defined(SecondaryDeviceCommand_size)
 #define APIDown_size                             (0 + sizeof(union APIDown_down_size_union))
 #define PUBLIC_API_DOWN_PB_H_MAX_SIZE            APIDown_size
 #endif

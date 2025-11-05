@@ -45,6 +45,15 @@ PB_BIND(HandStatus, HandStatus, AUTO)
 PB_BIND(HandCommand, HandCommand, AUTO)
 
 
+PB_BIND(ArmApiFreeDragCommand, ArmApiFreeDragCommand, AUTO)
+
+
+PB_BIND(ArmApiZeroCurrentCommand, ArmApiZeroCurrentCommand, AUTO)
+
+
+PB_BIND(ArmApiControlCommand, ArmApiControlCommand, AUTO)
+
+
 PB_BIND(ArmSharedCommand, ArmSharedCommand, AUTO)
 
 
@@ -87,6 +96,7 @@ PB_BIND(MotorStatus, MotorStatus, AUTO)
 PB_BIND(SecondaryDeviceStatus, SecondaryDeviceStatus, AUTO)
 
 
+PB_BIND(SecondaryDeviceCommand, SecondaryDeviceCommand, AUTO)
 
 
 
