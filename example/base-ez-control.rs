@@ -23,11 +23,13 @@ pub mod base_backend {
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
-fn decode_message(bytes: &[u8]) -> Result<base_backend::ApiUp, anyhow::Error> {
+fn decode_message(bytes: &[u8], log: bool) -> Result<base_backend::ApiUp, anyhow::Error> {
     let msg = base_backend::ApiUp::decode(bytes).unwrap();
     let ret = msg.clone();
-    if let Some(log) = msg.log {
-        warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
+    if log {
+        if let Some(log) = msg.log {
+            warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
+        }
     }
     if msg.protocol_major_version != ACCEPTABLE_PROTOCOL_MAJOR_VERSION {
         let w = format!(
@@ -45,7 +47,7 @@ fn decode_websocket_message(
     msg: tungstenite::Message,
 ) -> Result<base_backend::ApiUp, anyhow::Error> {
     match msg {
-        tungstenite::Message::Binary(bytes) => return decode_message(&bytes),
+        tungstenite::Message::Binary(bytes) => return decode_message(&bytes, false),
         _ => {
             return Err(anyhow::anyhow!("Unexpected message type"));
         }
@@ -106,7 +108,7 @@ async fn main() {
     let kcp_server_status = loop {
         let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap()).unwrap();
         if msg.kcp_server_status.is_some() {
-            println!("KCP Enabled");
+            info!("KCP Enabled");
             break msg.kcp_server_status.unwrap();
         }
     };
@@ -174,7 +176,7 @@ async fn main() {
             if let Some(messages) = parser.parse(&bytes).unwrap() {
                 for (optcode, bytes) in messages {
                     if optcode == HexSocketOpcode::Binary {
-                        let msg = decode_message(&bytes).unwrap();
+                        let msg = decode_message(&bytes, true).unwrap();
                         if let Some(status) = msg.status.clone() {
                             match status {
                                 base_backend::api_up::Status::BaseStatus(base_status) => {
@@ -195,20 +197,35 @@ async fn main() {
         }
     });
 
+    // Change KCP Report Frequency to 250Hz.
+    KcpPortOwner::send_binary(
+        &tx,
+        base_backend::ApiDown {
+            down: Some(base_backend::api_down::Down::SetReportFrequency(
+                base_backend::ReportFrequency::Rf250Hz as i32,
+            )),
+        }
+        .encode_to_vec(),
+    )
+    .await
+    .expect("Failed to send initialize message");
+
     // Before sending move command, we need to set initialize the base first.
-    let enable_message = base_backend::ApiDown {
-        down: Some(base_backend::api_down::Down::BaseCommand(
-            base_backend::BaseCommand {
-                command: Some(base_backend::base_command::Command::ApiControlInitialize(
-                    true,
-                )),
-            },
-        )),
-    };
-    let enable_bytes = enable_message.encode_to_vec();
-    KcpPortOwner::send_binary(&tx, enable_bytes)
-        .await
-        .expect("Failed to send enable message");
+    KcpPortOwner::send_binary(
+        &tx,
+        base_backend::ApiDown {
+            down: Some(base_backend::api_down::Down::BaseCommand(
+                base_backend::BaseCommand {
+                    command: Some(base_backend::base_command::Command::ApiControlInitialize(
+                        true,
+                    )),
+                },
+            )),
+        }
+        .encode_to_vec(),
+    )
+    .await
+    .expect("Failed to send initialize message");
 
     // Down, base command, command, simple_move_command, vx = 0.0, vy = 0, w = 0.1
     let move_message = base_backend::ApiDown {
