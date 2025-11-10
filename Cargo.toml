@@ -9,6 +9,10 @@ edition = "2021"
 name = "base-ez-control"
 path = "example/base-ez-control.rs"
 
+[[bin]]
+name = "base-ez-control-websocket"
+path = "example/base-ez-control-websocket.rs"
+
 [dependencies]
 futures-channel = "0.3.31"
 futures-util = "0.3.31"
@@ -40,6 +44,8 @@ url = "2.5.0"
 lazy_static = "1.4.0"
 random = "0.14.0"
 mdns-sd = "0.14.1"
+kcp-bindings = {version = "1.0.0", features = ["hexfellow"]}
+# kcp-bindings = { path = "../kcp-bindings", features = ["hexfellow"] }
 
 
 [build-dependencies]
