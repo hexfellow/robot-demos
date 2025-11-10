@@ -153,6 +153,22 @@ async fn main() {
         .await
         .expect("Failed to send set report frequency message");
 
+    // Unconditionally clear parking stop on first connect.
+    ws_sink
+        .send(tungstenite::Message::Binary(
+            base_backend::ApiDown {
+                down: Some(base_backend::api_down::Down::BaseCommand(
+                    base_backend::BaseCommand {
+                        command: Some(base_backend::base_command::Command::ClearParkingStop(true)),
+                    },
+                )),
+            }
+            .encode_to_vec()
+            .into(),
+        ))
+        .await
+        .expect("Failed to send clear parking stop message");
+
     // Spawn the websocket handle task
     // Just ignore all messages from websocket.
     // You can ofc still decode message if want to.
