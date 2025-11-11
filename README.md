@@ -32,7 +32,7 @@ cargo run --bin base-ez-control -- 172.18.23.92:8439
 ```
 
 ```bash
-cargo run --bin base-ez-control-websocket ws://172.18.23.92:8439
+cargo run --bin base-ez-control-websocket -- 172.18.23.92:8439
 ```
 
 Same as above, but using websocket instead of KCP.

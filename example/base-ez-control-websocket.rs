@@ -7,14 +7,15 @@ use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use prost::Message;
+use std::net::SocketAddrV4;
 use tokio_tungstenite::MaybeTlsStream;
 
 const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(help = "WebSocket URL to connect to (e.g. ws://localhost:8439)")]
-    url: String,
+    #[arg(help = "IpV4 address to connect to (e.g. 127.0.0.1:8439)")]
+    url: SocketAddrV4,
 }
 // Protobuf generated code.
 pub mod base_backend {
@@ -28,7 +29,8 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
-    let res = tokio_tungstenite::connect_async(&args.url).await;
+    let url = format!("ws://{}", args.url);
+    let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
         Ok((ws, _)) => ws,
         Err(e) => {
