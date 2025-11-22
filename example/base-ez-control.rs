@@ -8,50 +8,14 @@ use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
 use log::{error, info, warn};
 use prost::Message;
+use robot_examples::{decode_message, decode_websocket_message, proto_public_api};
 use std::net::{SocketAddr, SocketAddrV4};
 use tokio::net::UdpSocket;
-
-const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
 
 #[derive(Parser)]
 struct Args {
     #[arg(help = "IpV4 address to connect to (e.g. 127.0.0.1:8439)")]
     url: SocketAddrV4,
-}
-// Protobuf generated code.
-pub mod base_backend {
-    include!(concat!(env!("OUT_DIR"), "/_.rs"));
-}
-
-fn decode_message(bytes: &[u8], log: bool) -> Result<base_backend::ApiUp, anyhow::Error> {
-    let msg = base_backend::ApiUp::decode(bytes).unwrap();
-    let ret = msg.clone();
-    if log {
-        if let Some(log) = msg.log {
-            warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
-        }
-    }
-    if msg.protocol_major_version != ACCEPTABLE_PROTOCOL_MAJOR_VERSION {
-        let w = format!(
-            "Protocol major version is not {}, current version: {}. This might cause compatibility issues. Consider upgrading the base firmware.",
-            ACCEPTABLE_PROTOCOL_MAJOR_VERSION, msg.protocol_major_version
-        );
-        warn!("{}", w);
-        // If protocol major version does not match, lets just stop printing odometry.
-        return Err(anyhow::anyhow!(w));
-    }
-    return Ok(ret);
-}
-
-fn decode_websocket_message(
-    msg: tungstenite::Message,
-) -> Result<base_backend::ApiUp, anyhow::Error> {
-    match msg {
-        tungstenite::Message::Binary(bytes) => return decode_message(&bytes, false),
-        _ => {
-            return Err(anyhow::anyhow!("Unexpected message type"));
-        }
-    };
 }
 
 #[tokio::main]
@@ -84,11 +48,11 @@ async fn main() {
     // Enable KCP
     ws_sink
         .send(tungstenite::Message::Binary(
-            base_backend::ApiDown {
-                down: Some(base_backend::api_down::Down::EnableKcp(
-                    base_backend::EnableKcp {
+            proto_public_api::ApiDown {
+                down: Some(proto_public_api::api_down::Down::EnableKcp(
+                    proto_public_api::EnableKcp {
                         client_peer_port: local_port as u32,
-                        kcp_config: Some(base_backend::KcpConfig {
+                        kcp_config: Some(proto_public_api::KcpConfig {
                             window_size_snd_wnd: 64,
                             window_size_rcv_wnd: 64,
                             interval_ms: 10,
@@ -130,8 +94,8 @@ async fn main() {
     // Here we just send a placeholder message.
     KcpPortOwner::send_binary(
         &tx,
-        base_backend::ApiDown {
-            down: Some(base_backend::api_down::Down::PlaceholderMessage(true)),
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::PlaceholderMessage(true)),
         }
         .encode_to_vec(),
     )
@@ -142,9 +106,9 @@ async fn main() {
     // Because we will be decoding KCP messages from now on.
     ws_sink
         .send(tungstenite::Message::Binary(
-            base_backend::ApiDown {
-                down: Some(base_backend::api_down::Down::SetReportFrequency(
-                    base_backend::ReportFrequency::Rf1Hz as i32,
+            proto_public_api::ApiDown {
+                down: Some(proto_public_api::api_down::Down::SetReportFrequency(
+                    proto_public_api::ReportFrequency::Rf1Hz as i32,
                 )),
             }
             .encode_to_vec()
@@ -156,10 +120,12 @@ async fn main() {
     // Unconditionally clear parking stop on first connect.
     ws_sink
         .send(tungstenite::Message::Binary(
-            base_backend::ApiDown {
-                down: Some(base_backend::api_down::Down::BaseCommand(
-                    base_backend::BaseCommand {
-                        command: Some(base_backend::base_command::Command::ClearParkingStop(true)),
+            proto_public_api::ApiDown {
+                down: Some(proto_public_api::api_down::Down::BaseCommand(
+                    proto_public_api::BaseCommand {
+                        command: Some(proto_public_api::base_command::Command::ClearParkingStop(
+                            true,
+                        )),
                     },
                 )),
             }
@@ -195,7 +161,7 @@ async fn main() {
                         let msg = decode_message(&bytes, true).unwrap();
                         if let Some(status) = msg.status.clone() {
                             match status {
-                                base_backend::api_up::Status::BaseStatus(base_status) => {
+                                proto_public_api::api_up::Status::BaseStatus(base_status) => {
                                     // Prints Odom
                                     if let Some(estimated_odometry) = base_status.estimated_odometry
                                     {
@@ -216,9 +182,9 @@ async fn main() {
     // Change KCP Report Frequency to 250Hz.
     KcpPortOwner::send_binary(
         &tx,
-        base_backend::ApiDown {
-            down: Some(base_backend::api_down::Down::SetReportFrequency(
-                base_backend::ReportFrequency::Rf250Hz as i32,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::SetReportFrequency(
+                proto_public_api::ReportFrequency::Rf250Hz as i32,
             )),
         }
         .encode_to_vec(),
@@ -229,12 +195,12 @@ async fn main() {
     // Before sending move command, we need to set initialize the base first.
     KcpPortOwner::send_binary(
         &tx,
-        base_backend::ApiDown {
-            down: Some(base_backend::api_down::Down::BaseCommand(
-                base_backend::BaseCommand {
-                    command: Some(base_backend::base_command::Command::ApiControlInitialize(
-                        true,
-                    )),
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::BaseCommand(
+                proto_public_api::BaseCommand {
+                    command: Some(
+                        proto_public_api::base_command::Command::ApiControlInitialize(true),
+                    ),
                 },
             )),
         }
@@ -244,18 +210,20 @@ async fn main() {
     .expect("Failed to send initialize message");
 
     // Down, base command, command, simple_move_command, vx = 0.0, vy = 0, w = 0.1
-    let move_message = base_backend::ApiDown {
-        down: Some(base_backend::api_down::Down::BaseCommand(
-            base_backend::BaseCommand {
-                command: Some(base_backend::base_command::Command::SimpleMoveCommand(
-                    base_backend::SimpleBaseMoveCommand {
-                        command: Some(base_backend::simple_base_move_command::Command::XyzSpeed(
-                            base_backend::XyzSpeed {
-                                speed_x: 0.0,
-                                speed_y: 0.0,
-                                speed_z: 0.1,
-                            },
-                        )),
+    let move_message = proto_public_api::ApiDown {
+        down: Some(proto_public_api::api_down::Down::BaseCommand(
+            proto_public_api::BaseCommand {
+                command: Some(proto_public_api::base_command::Command::SimpleMoveCommand(
+                    proto_public_api::SimpleBaseMoveCommand {
+                        command: Some(
+                            proto_public_api::simple_base_move_command::Command::XyzSpeed(
+                                proto_public_api::XyzSpeed {
+                                    speed_x: 0.0,
+                                    speed_y: 0.0,
+                                    speed_z: 0.1,
+                                },
+                            ),
+                        ),
                     },
                 )),
             },
@@ -276,12 +244,10 @@ async fn main() {
     // So lets tell the base we are finishing our control session.
     // This is the last message we send to the base, so inorder to make absolutely sure the base is deinitialized,
     // we will send it over Websocket.
-    let deinitialize_bytes = base_backend::ApiDown {
-        down: Some(base_backend::api_down::Down::BaseCommand(
-            base_backend::BaseCommand {
-                command: Some(base_backend::base_command::Command::ApiControlInitialize(
-                    false,
-                )),
+    let deinitialize_bytes = proto_public_api::ApiDown {
+        down: Some(proto_public_api::api_down::Down::BaseCommand(
+            proto_public_api::BaseCommand {
+                command: Some(proto_public_api::base_command::Command::ApiControlInitialize(false)),
             },
         )),
     }
