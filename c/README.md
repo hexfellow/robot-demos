@@ -22,3 +22,9 @@ How to run:
 ## Dev log
 
 Run `gen.bash` everytime protobuf files are changed.
+
+## Warning 
+
+Currently there is no KCP support in C demo.
+
+Only websocket is supported.

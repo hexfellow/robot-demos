@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(robot-examples C)
 
-add_executable(base-ez-control
-    main.c
+add_executable(base-ez-control-websocket
+    base-ez-control-websocket.c
     mongoose.c
     pb_encode.c
     pb_decode.c
@@ -16,4 +16,4 @@ add_executable(base-ez-control
 add_definitions(-DPB_ENABLE_MALLOC=1)
 add_definitions(-DMG_IO_SIZE=65536)
 
-target_include_directories(base-ez-control PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated/inc)
+target_include_directories(base-ez-control-websocket PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated/inc)
