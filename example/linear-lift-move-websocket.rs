@@ -16,11 +16,12 @@ const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
 struct Args {
     #[arg(help = "IpV4 address to connect to (e.g. 172.18.23.92:8439)")]
     url: SocketAddrV4,
-    #[arg(help = "Percentage of the zero position to move to (e.g. 0.5)")]
+    #[arg(help = "Percentage of max position to move to (e.g. 0.5)")]
     percentage: f64,
 }
+
 // Protobuf generated code.
-pub mod base_backend {
+pub mod proto_api {
     include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
@@ -35,6 +36,12 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
+    if args.percentage < 0.0 || args.percentage > 1.0 {
+        panic!(
+            "Percentage must be between 0.0 and 1.0, got: {}",
+            args.percentage
+        );
+    }
     let url = format!("ws://{}", args.url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
@@ -58,7 +65,7 @@ async fn main() {
         while let Some(Ok(msg)) = ws_stream.next().await {
             match msg {
                 tungstenite::Message::Binary(bytes) => {
-                    let msg = base_backend::ApiUp::decode(bytes).unwrap();
+                    let msg = proto_api::ApiUp::decode(bytes).unwrap();
                     if let Some(log) = msg.log {
                         warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
                     }
@@ -71,9 +78,7 @@ async fn main() {
                         return;
                     }
                     match msg.status {
-                        Some(base_backend::api_up::Status::LinearLiftStatus(
-                            linear_lift_status,
-                        )) => {
+                        Some(proto_api::api_up::Status::LinearLiftStatus(linear_lift_status)) => {
                             if linear_lift_status.calibrated {
                                 let max = linear_lift_status.max_pos;
                                 // We don't care if this fails to make code simple
@@ -101,9 +106,9 @@ async fn main() {
     // Set report frequency to 50Hz; Since its a simple demo.
     ws_sink
         .send(tungstenite::Message::Binary(
-            base_backend::ApiDown {
-                down: Some(base_backend::api_down::Down::SetReportFrequency(
-                    base_backend::ReportFrequency::Rf50Hz as i32,
+            proto_api::ApiDown {
+                down: Some(proto_api::api_down::Down::SetReportFrequency(
+                    proto_api::ReportFrequency::Rf50Hz as i32,
                 )),
             }
             .encode_to_vec()
@@ -129,10 +134,10 @@ async fn main() {
 
         ws_sink
             .send(tungstenite::Message::Binary(
-                base_backend::ApiDown {
-                    down: Some(base_backend::api_down::Down::LinearLiftCommand(
-                        base_backend::LinearLiftCommand {
-                            command: Some(base_backend::linear_lift_command::Command::TargetPos(
+                proto_api::ApiDown {
+                    down: Some(proto_api::api_down::Down::LinearLiftCommand(
+                        proto_api::LinearLiftCommand {
+                            command: Some(proto_api::linear_lift_command::Command::TargetPos(
                                 move_target,
                             )),
                         },
