@@ -17,3 +17,4 @@ add_definitions(-DPB_ENABLE_MALLOC=1)
 add_definitions(-DMG_IO_SIZE=65536)
 
 target_include_directories(base-ez-control-websocket PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated/inc)
+target_include_directories(base-ez-control PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated/inc)

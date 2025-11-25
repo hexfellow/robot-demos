@@ -138,24 +138,24 @@ int main(int argc, char *argv[])
         quit = true;
     }
 
-    struct timeval start_time_val, last_send_time_val;
+    struct timespec start_time_val, last_send_time_val;
     int count = 0;
     clock_gettime(CLOCK_MONOTONIC, &start_time_val);
     clock_gettime(CLOCK_MONOTONIC, &last_send_time_val);
     while (!quit)
     {
         // Send init and move messages for 10s, at 50Hz. Lastly, send deinit message.
-        struct timeval now_val;
+        struct timespec now_val;
         clock_gettime(CLOCK_MONOTONIC, &now_val);
         double total_elapsed_time = now_val.tv_sec - start_time_val.tv_sec;
         // On MacOS this tv_usec is wired? Seems need to divide by 1000000.0 to get correct value.
-        double elapsed_time_ms = (now_val.tv_usec - last_send_time_val.tv_usec) / 1000000.0 + (now_val.tv_sec - last_send_time_val.tv_sec) * 1000.0;
+        double elapsed_time_ms = (now_val.tv_nsec - last_send_time_val.tv_nsec) / 1000000.0 + (now_val.tv_sec - last_send_time_val.tv_sec) * 1000.0;
         if (elapsed_time_ms >= 20.0)
         {
             mg_ws_send(c, init_buffer, init_buffer_size, WEBSOCKET_OP_BINARY);
             mg_ws_send(c, move_buffer, move_buffer_size, WEBSOCKET_OP_BINARY);
             clock_gettime(CLOCK_MONOTONIC, &last_send_time_val);
-            printf("Sending message at %ld.%06ld.\n", now_val.tv_sec, now_val.tv_usec);
+            printf("Sending message at %ld.%06ld.\n", now_val.tv_sec, now_val.tv_nsec);
             count++;
         }
         // Check if 10 seconds have passed since start time
