@@ -27,6 +27,7 @@ pub mod proto_api {
 
 lazy_static::lazy_static! {
     static ref LINEAR_LIFT_MAX_POS: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    static ref LINEAR_LIFT_MAX_SPEED: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
 }
 
 #[tokio::main]
@@ -83,6 +84,7 @@ async fn main() {
                                 let max = linear_lift_status.max_pos;
                                 // We don't care if this fails to make code simple
                                 let _ = LINEAR_LIFT_MAX_POS.set(max);
+                                let _ = LINEAR_LIFT_MAX_SPEED.set(linear_lift_status.max_speed);
                                 let current = linear_lift_status.current_pos;
                                 let percentage = current as f64 / max as f64;
                                 let pulse_per_meter = linear_lift_status.pulse_per_rotation as f64;
@@ -126,9 +128,35 @@ async fn main() {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     };
+    let max_speed = {
+        loop {
+            if let Some(max_speed) = LINEAR_LIFT_MAX_SPEED.get() {
+                break max_speed.clone();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    };
     let move_target = (args.percentage * max as f64) as i64;
-    // To keep this demo simple, we quit after 10 seconds no matter what.
-    while start_time.elapsed() < std::time::Duration::from_secs(10) {
+
+    // Set speed to 90% of max speed
+    let speed = (max_speed as f64 * 0.9) as u32;
+    ws_sink
+        .send(tungstenite::Message::Binary(
+            proto_api::ApiDown {
+                down: Some(proto_api::api_down::Down::LinearLiftCommand(
+                    proto_api::LinearLiftCommand {
+                        command: Some(proto_api::linear_lift_command::Command::SetSpeed(speed)),
+                    },
+                )),
+            }
+            .encode_to_vec()
+            .into(),
+        ))
+        .await
+        .expect("Failed to send set report frequency message");
+
+    // To keep this demo simple, we quit after 5 seconds no matter what.
+    while start_time.elapsed() < std::time::Duration::from_secs(5) {
         // You can also use tokio's tick if you want
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
