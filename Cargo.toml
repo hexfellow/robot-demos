@@ -38,6 +38,7 @@ tokio-util = "0.7.12"
 hyper-tungstenite = "0.17.0"
 hyper = { version = "1.5.2", features = ["http1", "server"] }
 hyper-util = { version = "0.1.10", features = ["tokio"] }
+libc = "0.2"
 
 # Let hyper-tungstenite decide tungstenite version
 tokio-tungstenite = "*"
@@ -48,7 +49,7 @@ url = "2.5.0"
 lazy_static = "1.4.0"
 random = "0.14.0"
 mdns-sd = "0.14.1"
-kcp-bindings = {version = "1.0.0", features = ["hexfellow"]}
+kcp-bindings = {version = "1.0.1", features = ["hexfellow"]}
 # kcp-bindings = { path = "../kcp-bindings", features = ["hexfellow"] }
 
 
