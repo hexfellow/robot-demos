@@ -60,8 +60,8 @@ static void ws_handler(struct mg_connection *c, int ev, void *ev_data)
                 c->is_closing = 1;
                 quit = true;
             }
-            // printf("[%ld]Received base status message; SpdX: %f, SpdY %f, SpdZ %f\n", time(NULL), rx_msg.status.base_status.estimated_odometry.speed_x,
-            //        rx_msg.status.base_status.estimated_odometry.speed_y, rx_msg.status.base_status.estimated_odometry.speed_z);
+            printf("[%ld]Received base status message; SpdX: %f, SpdY %f, SpdZ %f\n", time(NULL), rx_msg.status.base_status.estimated_odometry.speed_x,
+                   rx_msg.status.base_status.estimated_odometry.speed_y, rx_msg.status.base_status.estimated_odometry.speed_z);
         }
         break;
     }
