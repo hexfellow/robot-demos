@@ -17,6 +17,10 @@ path = "example/base-ez-control-websocket.rs"
 name = "linear-lift-move-websocket"
 path = "example/linear-lift-move-websocket.rs"
 
+[[bin]]
+name = "read-ts"
+path = "example/read-ts.rs"
+
 [dependencies]
 futures-channel = "0.3.31"
 futures-util = "0.3.31"
