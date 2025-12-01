@@ -7,7 +7,7 @@ use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use prost::Message;
-use robot_examples::{
+use robot_demos::{
     decode_message, decode_websocket_message, proto_public_api, ACCEPTABLE_PROTOCOL_MAJOR_VERSION,
 };
 use std::net::SocketAddrV4;

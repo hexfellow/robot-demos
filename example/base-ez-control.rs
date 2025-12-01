@@ -8,7 +8,7 @@ use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
 use log::{error, info, warn};
 use prost::Message;
-use robot_examples::{decode_message, decode_websocket_message, proto_public_api};
+use robot_demos::{decode_message, decode_websocket_message, proto_public_api};
 use std::net::{SocketAddr, SocketAddrV4};
 use tokio::net::UdpSocket;
 
