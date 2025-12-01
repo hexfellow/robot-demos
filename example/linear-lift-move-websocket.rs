@@ -4,13 +4,11 @@
 // https://github.com/orgs/hexfellow/discussions/2
 
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use log::{error, info, warn};
-use prost::Message;
+use robot_demos::{decode_websocket_message, proto_public_api, send_api_down_message_to_websocket};
 use std::net::SocketAddrV4;
 use tokio_tungstenite::MaybeTlsStream;
-
-const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
 
 #[derive(Parser)]
 struct Args {
@@ -18,11 +16,6 @@ struct Args {
     url: SocketAddrV4,
     #[arg(help = "Percentage of max position to move to (e.g. 0.5)")]
     percentage: f64,
-}
-
-// Protobuf generated code.
-pub mod proto_api {
-    include!(concat!(env!("OUT_DIR"), "/_.rs"));
 }
 
 lazy_static::lazy_static! {
@@ -64,74 +57,50 @@ async fn main() {
     // Spawn the print task
     tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
-            match msg {
-                tungstenite::Message::Binary(bytes) => {
-                    let msg = proto_api::ApiUp::decode(bytes).unwrap();
-                    if let Some(log) = msg.log {
-                        warn!("Log from base: {:?}", log); // Having a log usually means something went boom, so lets print it.
-                    }
-                    if msg.protocol_major_version != ACCEPTABLE_PROTOCOL_MAJOR_VERSION {
-                        warn!(
-                            "Protocol major version is not {}, current version: {}. This might cause compatibility issues. Consider upgrading the base firmware.",
-                            ACCEPTABLE_PROTOCOL_MAJOR_VERSION, msg.protocol_major_version
-                        );
-                        // If protocol major version does not match, lets just stop printing odometry.
-                        return;
-                    }
-                    match msg.status {
-                        Some(proto_api::api_up::Status::LinearLiftStatus(linear_lift_status)) => {
-                            if linear_lift_status.calibrated {
-                                let max = linear_lift_status.max_pos;
-                                // We don't care if this fails to make code simple
-                                let _ = LINEAR_LIFT_MAX_POS.set(max);
-                                let _ = LINEAR_LIFT_MAX_SPEED.set(linear_lift_status.max_speed);
-                                let current = linear_lift_status.current_pos;
-                                let percentage = current as f64 / max as f64;
-                                let pulse_per_meter = linear_lift_status.pulse_per_rotation as f64;
-                                let current_meter = current as f64 / pulse_per_meter;
-                                let max_meter = max as f64 / pulse_per_meter;
-                                info!(
-                                "Current position: {:?}m, Max position: {:?}m, Percentage: {:?}, Raw Current Position: {:?}, Raw Max Position: {:?}",
-                                current_meter, max_meter, percentage, current, max
-                            );
-                            } else {
-                                info!("Lift is not yet calibrated");
-                            }
-                        }
-                        _ => {}
+            let msg = decode_websocket_message(msg).unwrap();
+            match msg.status {
+                Some(proto_public_api::api_up::Status::LinearLiftStatus(linear_lift_status)) => {
+                    if linear_lift_status.calibrated {
+                        let max = linear_lift_status.max_pos;
+                        // We don't care if this fails to make code simple
+                        let _ = LINEAR_LIFT_MAX_POS.set(max);
+                        let _ = LINEAR_LIFT_MAX_SPEED.set(linear_lift_status.max_speed);
+                        let current = linear_lift_status.current_pos;
+                        let percentage = current as f64 / max as f64;
+                        let pulse_per_meter = linear_lift_status.pulse_per_rotation as f64;
+                        let current_meter = current as f64 / pulse_per_meter;
+                        let max_meter = max as f64 / pulse_per_meter;
+                        info!(
+                        "Current position: {:?}m, Max position: {:?}m, Percentage: {:?}, Raw Current Position: {:?}, Raw Max Position: {:?}",
+                        current_meter, max_meter, percentage, current, max
+                    );
+                    } else {
+                        info!("Lift is not yet calibrated");
                     }
                 }
                 _ => {}
-            };
+            }
         }
     });
     // Set report frequency to 50Hz; Since its a simple demo.
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            proto_api::ApiDown {
-                down: Some(proto_api::api_down::Down::SetReportFrequency(
-                    proto_api::ReportFrequency::Rf50Hz as i32,
-                )),
-            }
-            .encode_to_vec()
-            .into(),
-        ))
-        .await
-        .expect("Failed to send set report frequency message");
+    send_api_down_message_to_websocket(
+        &mut ws_sink,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::SetReportFrequency(
+                proto_public_api::ReportFrequency::Rf50Hz as i32,
+            )),
+        },
+    )
+    .await
+    .expect("Failed to send set report frequency message");
 
     let start_time = std::time::Instant::now();
-    let max = {
+    let (max, max_speed) = {
         loop {
             if let Some(max) = LINEAR_LIFT_MAX_POS.get() {
-                break max.clone();
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    };
-    let max_speed = {
-        loop {
-            if let Some(max_speed) = LINEAR_LIFT_MAX_SPEED.get() {
-                break max_speed.clone();
+                if let Some(max_speed) = LINEAR_LIFT_MAX_SPEED.get() {
+                    break (max.clone(), max_speed.clone());
+                }
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
@@ -140,41 +109,38 @@ async fn main() {
 
     // Set speed to 90% of max speed
     let speed = (max_speed as f64 * 0.9) as u32;
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            proto_api::ApiDown {
-                down: Some(proto_api::api_down::Down::LinearLiftCommand(
-                    proto_api::LinearLiftCommand {
-                        command: Some(proto_api::linear_lift_command::Command::SetSpeed(speed)),
-                    },
-                )),
-            }
-            .encode_to_vec()
-            .into(),
-        ))
-        .await
-        .expect("Failed to send set report frequency message");
+    send_api_down_message_to_websocket(
+        &mut ws_sink,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::LinearLiftCommand(
+                proto_public_api::LinearLiftCommand {
+                    command: Some(proto_public_api::linear_lift_command::Command::SetSpeed(
+                        speed,
+                    )),
+                },
+            )),
+        },
+    )
+    .await
+    .expect("Failed to send set speed message");
 
     // To keep this demo simple, we quit after 5 seconds no matter what.
     while start_time.elapsed() < std::time::Duration::from_secs(5) {
         // You can also use tokio's tick if you want
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-
-        ws_sink
-            .send(tungstenite::Message::Binary(
-                proto_api::ApiDown {
-                    down: Some(proto_api::api_down::Down::LinearLiftCommand(
-                        proto_api::LinearLiftCommand {
-                            command: Some(proto_api::linear_lift_command::Command::TargetPos(
-                                move_target,
-                            )),
-                        },
-                    )),
-                }
-                .encode_to_vec()
-                .into(),
-            ))
-            .await
-            .expect("Failed to send move message");
+        send_api_down_message_to_websocket(
+            &mut ws_sink,
+            proto_public_api::ApiDown {
+                down: Some(proto_public_api::api_down::Down::LinearLiftCommand(
+                    proto_public_api::LinearLiftCommand {
+                        command: Some(proto_public_api::linear_lift_command::Command::TargetPos(
+                            move_target,
+                        )),
+                    },
+                )),
+            },
+        )
+        .await
+        .expect("Failed to send move message");
     }
 }

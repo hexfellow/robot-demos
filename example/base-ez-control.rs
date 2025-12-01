@@ -8,7 +8,9 @@ use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
 use log::{error, info, warn};
 use prost::Message;
-use robot_demos::{decode_message, decode_websocket_message, proto_public_api};
+use robot_demos::{
+    decode_message, decode_websocket_message, proto_public_api, send_api_down_message_to_websocket,
+};
 use std::net::{SocketAddr, SocketAddrV4};
 use tokio::net::UdpSocket;
 
@@ -46,28 +48,26 @@ async fn main() {
     let local_port = kcp_socket.local_addr().unwrap().port();
 
     // Enable KCP
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            proto_public_api::ApiDown {
-                down: Some(proto_public_api::api_down::Down::EnableKcp(
-                    proto_public_api::EnableKcp {
-                        client_peer_port: local_port as u32,
-                        kcp_config: Some(proto_public_api::KcpConfig {
-                            window_size_snd_wnd: 64,
-                            window_size_rcv_wnd: 64,
-                            interval_ms: 10,
-                            no_delay: true,
-                            nc: true,
-                            resend: 2,
-                        }),
-                    },
-                )),
-            }
-            .encode_to_vec()
-            .into(),
-        ))
-        .await
-        .expect("Failed to send enable KCP message");
+    send_api_down_message_to_websocket(
+        &mut ws_sink,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::EnableKcp(
+                proto_public_api::EnableKcp {
+                    client_peer_port: local_port as u32,
+                    kcp_config: Some(proto_public_api::KcpConfig {
+                        window_size_snd_wnd: 64,
+                        window_size_rcv_wnd: 64,
+                        interval_ms: 10,
+                        no_delay: true,
+                        nc: true,
+                        resend: 2,
+                    }),
+                },
+            )),
+        },
+    )
+    .await
+    .expect("Failed to send enable KCP message");
 
     let kcp_server_status = loop {
         let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap()).unwrap();
@@ -104,40 +104,36 @@ async fn main() {
 
     // Set websocket report frequency to 1Hz.
     // Because we will be decoding KCP messages from now on.
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            proto_public_api::ApiDown {
-                down: Some(proto_public_api::api_down::Down::SetReportFrequency(
-                    proto_public_api::ReportFrequency::Rf1Hz as i32,
-                )),
-            }
-            .encode_to_vec()
-            .into(),
-        ))
-        .await
-        .expect("Failed to send set report frequency message");
+    send_api_down_message_to_websocket(
+        &mut ws_sink,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::SetReportFrequency(
+                proto_public_api::ReportFrequency::Rf1Hz as i32,
+            )),
+        },
+    )
+    .await
+    .expect("Failed to send set report frequency message");
 
     // Unconditionally clear parking stop on first connect.
-    ws_sink
-        .send(tungstenite::Message::Binary(
-            proto_public_api::ApiDown {
-                down: Some(proto_public_api::api_down::Down::BaseCommand(
-                    proto_public_api::BaseCommand {
-                        command: Some(proto_public_api::base_command::Command::ClearParkingStop(
-                            true,
-                        )),
-                    },
-                )),
-            }
-            .encode_to_vec()
-            .into(),
-        ))
-        .await
-        .expect("Failed to send clear parking stop message");
+    send_api_down_message_to_websocket(
+        &mut ws_sink,
+        proto_public_api::ApiDown {
+            down: Some(proto_public_api::api_down::Down::BaseCommand(
+                proto_public_api::BaseCommand {
+                    command: Some(proto_public_api::base_command::Command::ClearParkingStop(
+                        true,
+                    )),
+                },
+            )),
+        },
+    )
+    .await
+    .expect("Failed to send clear parking stop message");
 
     // Spawn the websocket handle task
     // Just ignore all messages from websocket.
-    // You can ofc still decode message if want to.
+    // You can ofc still decode message if want to. Just be aware that you must keep the websocket connection alive.
     tokio::spawn(async move {
         loop {
             let _ = ws_stream.next().await;

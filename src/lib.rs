@@ -1,8 +1,8 @@
-use clap::{Parser, Subcommand};
+use futures_util::stream::SplitSink;
+use futures_util::SinkExt;
 use log::warn;
 use prost::Message;
-use std::net::SocketAddr;
-use std::time::{Duration, Instant};
+use tokio_tungstenite::WebSocketStream;
 
 pub const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
 
@@ -40,4 +40,17 @@ pub fn decode_websocket_message(
             return Err(anyhow::anyhow!("Unexpected message type"));
         }
     };
+}
+
+pub async fn send_api_down_message_to_websocket(
+    ws_sink: &mut SplitSink<
+        WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+        tungstenite::Message,
+    >,
+    msg: proto_public_api::ApiDown,
+) -> Result<(), anyhow::Error> {
+    ws_sink
+        .send(tungstenite::Message::Binary(msg.encode_to_vec().into()))
+        .await?;
+    Ok(())
 }
