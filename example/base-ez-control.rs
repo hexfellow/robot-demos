@@ -1,4 +1,4 @@
-// This is a demo controling base to move at 0.1 m/s forward, while printing data from the base.
+// This is a demo controling base to rotate at 0.1 rad/s, while printing data from the base.
 // Based on this code, we make some nice control showcase, like:
 // https://github.com/orgs/hexfellow/discussions/1
 // https://github.com/orgs/hexfellow/discussions/2

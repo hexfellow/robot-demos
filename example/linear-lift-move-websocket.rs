@@ -1,8 +1,5 @@
-// This is a demo controling base to move at 0.1 m/s forward, while printing data from the base.
-// Based on this code, we make some nice control showcase, like:
-// https://github.com/orgs/hexfellow/discussions/1
-// https://github.com/orgs/hexfellow/discussions/2
-
+// This is a demo controling lift to move to a certain percentage of the max position.
+// Be aware that, all numbers stated as intxx can be negative. Do not assume they are always positive.
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
