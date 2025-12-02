@@ -18,8 +18,8 @@ name = "linear-lift-move-websocket"
 path = "example/linear-lift-move-websocket.rs"
 
 [[bin]]
-name = "read-ts"
-path = "example/read-ts.rs"
+name = "read-time-stamp-websocket"
+path = "example/read-time-stamp-websocket.rs"
 
 [dependencies]
 futures-channel = "0.3.31"
