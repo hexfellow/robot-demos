@@ -39,11 +39,18 @@ Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 
 #### Usage
 
 ```bash
+# KCP, ipv4
 cargo run --bin base-ez-control -- 172.18.23.92:8439
 ```
 
 ```bash
-cargo run --bin base-ez-control-websocket -- 172.18.23.92:8439
+# Websocket, ipv4
+cargo run --bin base-ez-control-websocket -- ws://172.18.23.92:8439
+```
+
+```bash
+# Websocket, ipv6
+cargo run --bin base-ez-control-websocket -- ws://[fe80::500d:96ff:fee1:d60b%3]:8439
 ```
 
 Same as above, but using websocket instead of KCP.
