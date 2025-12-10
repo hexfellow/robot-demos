@@ -7,13 +7,14 @@ use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
 use robot_demos::{decode_websocket_message, proto_public_api, send_api_down_message_to_websocket};
-use std::net::SocketAddrV4;
 use tokio_tungstenite::MaybeTlsStream;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(help = "IpV4 address to connect to (e.g. 127.0.0.1:8439)")]
-    url: SocketAddrV4,
+    #[arg(
+        help = "WebSocket URL to connect to (e.g. ws://127.0.0.1:8439 or ws://[fe80::500d:96ff:fee1:d60b%3]:8439). If you use ipv6, please make sure IPV6's zone id is correct. The zone id must be interface id not interface name. If you don't understand what this means, please use ipv4."
+    )]
+    url: String,
 }
 
 #[tokio::main]
@@ -23,16 +24,19 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
-    let url = format!("ws://{}", args.url);
+    let url = args.url;
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
         Ok((ws, _)) => ws,
         Err(e) => {
-            error!("Error during websocket handshake: {}", e);
-            return;
+            error!(
+                "Error during websocket handshake: {}. Did you type the correct URL?",
+                e
+            );
+            std::process::exit(1);
         }
     };
-    info!("Connected to: {}", args.url);
+    info!("Connected to: {}", url);
     // Remember to set tcp_nodelay to true, to get better performance.
     match ws_stream.get_ref() {
         MaybeTlsStream::Plain(stream) => {
@@ -52,7 +56,9 @@ async fn main() {
                         info!("Estimated odometry: {:?}", estimated_odometry);
                     }
                 }
-                _ => {}
+                _ => {
+                    warn!("Unexpected status type: {}. Are you sure you are connecting to the correct robot?", msg.robot_type().as_str_name());
+                }
             }
         }
     });
