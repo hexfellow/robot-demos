@@ -6,18 +6,21 @@
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
-use log::{error, info, warn};
+use log::{error, info};
 use prost::Message;
 use robot_demos::{
     decode_message, decode_websocket_message, proto_public_api, send_api_down_message_to_websocket,
 };
-use std::net::{SocketAddr, SocketAddrV4};
 use tokio::net::UdpSocket;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(help = "IpV4 address to connect to (e.g. 127.0.0.1:8439)")]
-    url: SocketAddrV4,
+    #[arg(
+        help = "WebSocket URL to connect to (e.g. 127.0.0.1 or [fe80::500d:96ff:fee1:d60b%3]). If you use ipv6, please make sure IPV6's zone id is correct. The zone id must be interface id not interface name. If you don't understand what this means, please use ipv4."
+    )]
+    url: String,
+    #[arg(help = "Port to connect to (e.g. 8439)")]
+    port: u16,
 }
 
 #[tokio::main]
@@ -27,8 +30,10 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
-    let urlstr = format!("ws://{}", args.url);
-    let res = tokio_tungstenite::connect_async(&urlstr).await;
+    let url = args.url.clone();
+    let url = format!("ws://{}:{}", url, args.port);
+    info!("Try connecting to: {}", url);
+    let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
         Ok((ws, _)) => ws,
         Err(e) => {
@@ -44,7 +49,12 @@ async fn main() {
         break (msg.session_id, ws_stream);
     };
 
-    let kcp_socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
+    let kcp_socket = UdpSocket::bind(std::net::SocketAddr::new(
+        std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        0,
+    ))
+    .await
+    .unwrap();
     let local_port = kcp_socket.local_addr().unwrap().port();
 
     // Enable KCP
@@ -78,10 +88,9 @@ async fn main() {
     };
 
     // KCP port is in kcp_config
-    let kcp_server_addr = SocketAddr::V4(SocketAddrV4::new(
-        args.url.ip().clone(),
-        kcp_server_status.server_port as u16,
-    ));
+    let kcp_server_addr = format!("{}:{}", args.url, kcp_server_status.server_port)
+        .parse()
+        .unwrap();
 
     // Please makesure kcp_port_owner lives long enough.
     // You can consider moving it to Arc

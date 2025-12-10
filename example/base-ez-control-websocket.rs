@@ -12,9 +12,11 @@ use tokio_tungstenite::MaybeTlsStream;
 #[derive(Parser)]
 struct Args {
     #[arg(
-        help = "WebSocket URL to connect to (e.g. ws://127.0.0.1:8439 or ws://[fe80::500d:96ff:fee1:d60b%3]:8439). If you use ipv6, please make sure IPV6's zone id is correct. The zone id must be interface id not interface name. If you don't understand what this means, please use ipv4."
+        help = "WebSocket URL to connect to (e.g. 127.0.0.1 or [fe80::500d:96ff:fee1:d60b%3]). If you use ipv6, please make sure IPV6's zone id is correct. The zone id must be interface id not interface name. If you don't understand what this means, please use ipv4."
     )]
     url: String,
+    #[arg(help = "Port to connect to (e.g. 8439)")]
+    port: u16,
 }
 
 #[tokio::main]
@@ -25,6 +27,8 @@ async fn main() {
     .init();
     let args = Args::parse();
     let url = args.url;
+    let url = format!("ws://{}:{}", url, args.port);
+    info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
         Ok((ws, _)) => ws,
