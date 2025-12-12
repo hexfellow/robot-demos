@@ -38,6 +38,7 @@ tungstenite = "0.27.0"
 lazy_static = "1.4.0"
 url = "2.5.7"
 kcp-bindings = {version = "1.1.0", features = ["hexfellow"]}
+mdns-sd = "0.17.1"
 # kcp-bindings = { path = "../kcp-bindings", features = ["hexfellow"] }
 
 [build-dependencies]

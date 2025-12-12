@@ -32,6 +32,13 @@ The repo contains demos written in following languages:
 
 ## Rust demo
 
+Finding HexFellow devices using mDNS.
+
+```bash
+cargo run --bin robot-demos
+```
+
+
 ### Base
 
 Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 10 seconds while printing estimated odometry. In the end, deinitialize the base correctly. 
