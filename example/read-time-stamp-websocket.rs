@@ -9,7 +9,6 @@ use log::{error, info, warn};
 use robot_demos::decode_websocket_message;
 use std::fs::File;
 use std::io;
-use std::net::SocketAddrV4;
 use std::os::fd::{AsRawFd, RawFd};
 use tokio_tungstenite::MaybeTlsStream;
 
@@ -52,8 +51,12 @@ fn fd_to_clockid(fd: RawFd) -> libc::clockid_t {
 
 #[derive(Parser)]
 struct Args {
-    #[arg(help = "IpV4 address to connect to (e.g. 127.0.0.1:8439)")]
-    url: SocketAddrV4,
+    #[arg(
+        help = "WebSocket URL to connect to (e.g. 127.0.0.1 or [fe80::500d:96ff:fee1:d60b%3]). If you use ipv6, please make sure IPV6's zone id is correct. The zone id must be interface id not interface name. If you don't understand what this means, please use ipv4."
+    )]
+    url: String,
+    #[arg(help = "Port to connect to (e.g. 8439)")]
+    port: u16,
     #[arg(help = "Device name to use for PTP (e.g. /dev/ptp0)")]
     device: std::path::PathBuf,
 }
@@ -67,7 +70,9 @@ async fn main() {
     let args = Args::parse();
     let ptp = PtpClock::open(args.device.to_str().unwrap())
         .expect("Failed to open PTP device, are you root? Did you add udev rules?");
-    let url = format!("ws://{}", args.url);
+    let url = args.url;
+    let url = format!("ws://{}:{}", url, args.port);
+    info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
         Ok((ws, _)) => ws,
@@ -76,7 +81,7 @@ async fn main() {
             return;
         }
     };
-    info!("Connected to: {}", args.url);
+    info!("Connected to: {}", url);
     // Remember to set tcp_nodelay to true, to get better performance.
     match ws_stream.get_ref() {
         MaybeTlsStream::Plain(stream) => {
