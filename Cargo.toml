@@ -3,16 +3,10 @@ name = "robot-demos"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["kcp"]
-kcp = ["kcp-bindings/hexfellow"]
-
-# Default binary (src/main.rs) - this is automatic
-# Additional binary targets can be specified here:
 [[bin]]
 name = "base-ez-control"
 path = "example/base-ez-control.rs"
-features = ["kcp"]
+required-features = ["kcp"]
 
 [[bin]]
 name = "base-ez-control-websocket"
@@ -44,6 +38,10 @@ lazy_static = "1.4.0"
 url = "2.5.7"
 kcp-bindings = {version = "1.1.0", features = ["hexfellow"], optional = true}
 mdns-sd = "0.17.1"
+
+[features]
+default = []
+kcp = ["kcp-bindings"]
 
 [build-dependencies]
 prost-build = { version = "0.12.4" }
