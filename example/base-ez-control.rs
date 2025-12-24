@@ -44,9 +44,9 @@ async fn main() {
     info!("Connected to: {}", args.url);
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
-    let (session_id, mut ws_stream) = loop {
+    let (session_id, mut ws_stream) = {
         let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap()).unwrap();
-        break (msg.session_id, ws_stream);
+        (msg.session_id, ws_stream)
     };
 
     let kcp_socket = UdpSocket::bind(std::net::SocketAddr::new(
