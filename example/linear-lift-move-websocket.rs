@@ -1,3 +1,4 @@
+#![allow(clippy::clone_on_copy)]
 // This is a demo controling lift to move to a certain percentage of the max position.
 // Be aware that, all numbers stated as intxx can be negative. Do not assume they are always positive.
 use clap::Parser;
@@ -60,6 +61,7 @@ async fn main() {
     tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
             let msg = decode_websocket_message(msg).unwrap();
+            #[allow(clippy::single_match)]
             match msg.status {
                 Some(proto_public_api::api_up::Status::LinearLiftStatus(linear_lift_status)) => {
                     if linear_lift_status.calibrated {
@@ -80,6 +82,7 @@ async fn main() {
                         info!("Lift is not yet calibrated");
                     }
                 }
+                // Add other handles yourself
                 _ => {}
             }
         }
