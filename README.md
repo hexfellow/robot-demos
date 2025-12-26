@@ -25,14 +25,23 @@ In most cases, websocket is good enough. **If you didn't encounter any latency i
 Clone this repo recursively `git clone --recursive https://github.com/hexfellow/robot-demos`.
 
 The repo contains demos written in following languages:
-- [Rust](#rust-demo) The demo for the Rust language is the highest priority in development and the most comprehensive.
-- [Python](python) 
-- [C](c) C demos have a relatively low priority. C demos are only offered as a demo to use websocket, kcp and protobuf. You can always port Rust demos to C.
+- [Rust](#rust-demo) Rust demos are the most comprehensive.
+- [Python](python) Minimal Python demos to establish connection and decode protobuf messages. It is not recommended to use these raw Python demos. It is usually better to use [https://github.com/hexfellow/hex_device_python](https://github.com/hexfellow/hex_device_python)
+- [C/C++](c) C/C++ demos have a relatively low priority. C/C++ demos are only offered as a demo to use websocket, kcp and protobuf. You can always port Rust demos to C/C++.
 
 
-## Rust demo
+## Rust demos
 
-Finding HexFellow devices using mDNS.
+### About IPV6
+> If you don't plan to use IPV6, you can SKIP this section.
+
+You can connect to our devices using IPV6. Making it possible to use without router, like using a single cable to connect the robot and PC. However, we assume you have basic knowledge about IPV6. If you don't, please use the robot with IPV4. We will not explain IPV6 in any detail.
+
+Without DHCP6, devices can still have a link-local address. To use them, you have to tell OS the zone id of the interface. (The `%` symbol)
+
+You can find the zone id of the interface by running `ip a`. In all of our examples, you have to use the number, not interface name. Things like `[fe80::500d:96ff:fee1:d60b%3]` will work, while `[fe80::500d:96ff:fee1:d60b%enp98s0]` will not.
+
+### Demo: Finding All Local HexFellow devices using mDNS.
 
 ```bash
 cargo run --bin robot-demos
@@ -49,16 +58,7 @@ Found HexFellow Device "hexfellow-390be859a9d694d8.local.": {V4(ScopedIpV4 { add
 Found HexFellow Device "hexfellow-4ede314e9b0023b3.local.": {V4(ScopedIpV4 { addr: 172.18.6.42 }), V6(ScopedIpV6 { addr: fe80::ac05:9fff:feeb:f87f, scope_id: InterfaceId { name: "enp98s0", index: 4 } })}
 ```
 
-### IPV6
-> If you don't plan to use IPV6, you can SKIP this section.
-
-You can connect to our devices using IPV6. Making it possible to use without router, like using a single cable to connect the robot and PC. However, we assume you have basic knowledge about IPV6. If you don't, please use the robot with IPV4. We will not explain IPV6 in any detail.
-
-Without DHCP6, devices can still have a link-local address. To use them, you have to tell OS the zone id of the interface. (The `%` symbol)
-
-You can find the zone id of the interface by running `ip a`. In all of our examples, you have to use the number, not interface name. Things like `[fe80::500d:96ff:fee1:d60b%3]` will work, while `[fe80::500d:96ff:fee1:d60b%enp98s0]` will not.
-
-### Base
+### Demo: Base Ez Control
 
 Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 10 seconds while printing estimated odometry. In the end, deinitialize the base correctly. 
 
@@ -90,7 +90,7 @@ Remember to change the IP address to the actual IP address of the base.
 
 ### Linear Lift
 
-Move lift to certain percentage off the zero position.
+Move lift to certain percentage off the zero position. This demo is websocket only.
 
 #### Usage
 
@@ -103,4 +103,15 @@ cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5
 ```bash
 # IPV6. Change IP Address and Zone id to your own.
 cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5
+```
+
+### Demo: Read Time Stamp from PTP Clock
+> This is an advanced demo. There will be no explanation for this demo.
+
+Read time stamp from PTP clock, and print the difference between the time stamp and the local time. You have to setup an PTP master on your network for this to work.
+
+#### Usage
+
+```bash
+cargo run --bin read-time-stamp-websocket -- 172.18.23.92 8439 /dev/ptp0
 ```

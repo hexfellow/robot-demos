@@ -28,18 +28,16 @@ pub fn decode_message(bytes: &[u8], log: bool) -> Result<proto_public_api::ApiUp
         // If protocol major version does not match, lets just stop printing odometry.
         return Err(anyhow::anyhow!(w));
     }
-    return Ok(ret);
+    Ok(ret)
 }
 
 pub fn decode_websocket_message(
     msg: tungstenite::Message,
 ) -> Result<proto_public_api::ApiUp, anyhow::Error> {
     match msg {
-        tungstenite::Message::Binary(bytes) => return decode_message(&bytes, false),
-        _ => {
-            return Err(anyhow::anyhow!("Unexpected message type"));
-        }
-    };
+        tungstenite::Message::Binary(bytes) => decode_message(&bytes, false),
+        _ => Err(anyhow::anyhow!("Unexpected message type")),
+    }
 }
 
 pub async fn send_api_down_message_to_websocket(

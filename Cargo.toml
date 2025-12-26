@@ -13,6 +13,10 @@ name = "base-ez-control-websocket"
 path = "example/base-ez-control-websocket.rs"
 
 [[bin]]
+name = "who-i-am-websocket"
+path = "example/who-i-am-websocket.rs"
+
+[[bin]]
 name = "linear-lift-move-websocket"
 path = "example/linear-lift-move-websocket.rs"
 
