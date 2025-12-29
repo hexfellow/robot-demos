@@ -24,6 +24,11 @@ path = "example/linear-lift-move-websocket.rs"
 name = "read-time-stamp-websocket"
 path = "example/read-time-stamp-websocket.rs"
 
+[[bin]]
+name = "arm-ez-control"
+path = "example/arm-ez-control.rs"
+required-features = ["kcp"]
+
 [dependencies]
 futures-channel = "0.3.31"
 futures-util = "0.3.31"
