@@ -66,12 +66,12 @@ Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 
 
 ```bash
 # KCP, ipv4. Change IP Address to your own.
-cargo run --bin base-ez-control -- 172.18.23.92 8439
+cargo run --features="kcp" --bin base-ez-control -- 172.18.23.92 8439
 ```
 
 ```bash
 # KCP, ipv6. Change IP Address and Zone id to your own.
-cargo run --bin base-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
+cargo run --features="kcp" --bin base-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
 
 ```bash
@@ -88,7 +88,7 @@ Same as above, but using websocket instead of KCP.
 
 Remember to change the IP address to the actual IP address of the base.
 
-### Linear Lift
+### Demo: Linear Lift move
 
 Move lift to certain percentage off the zero position. This demo is websocket only.
 
@@ -114,4 +114,22 @@ Read time stamp from PTP clock, and print the difference between the time stamp 
 
 ```bash
 cargo run --bin read-time-stamp-websocket -- 172.18.23.92 8439 /dev/ptp0
+```
+
+### Demo: Arm Ez Control
+
+Robotic arms are complex devices. This demo will only send command `Torque:0.0` to the arm, and print the motor status.
+
+WARNING: This will cause arm to move due to gravity. 
+
+#### Usage
+
+```bash
+# KCP, ipv4. Change IP Address to your own.
+cargo run --features="kcp" --bin arm-ez-control -- 172.18.23.92 8439
+```
+
+```bash
+# KCP, ipv6. Change IP Address and Zone id to your own.
+cargo run --features="kcp" --bin arm-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
