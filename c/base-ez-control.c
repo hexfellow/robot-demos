@@ -1,573 +1,420 @@
-#include <sys/time.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <time.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <errno.h>
-#include "mongoose.h"
-#include "pb_decode.h"
-#include "pb_encode.h"
-#include "generated/inc/public_api_up.pb.h"
-#include "generated/inc/public_api_down.pb.h"
+#include <stdatomic.h>
+
+// 引入第三方库
 #include "ikcp.h"
+#include "mongoose.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
+#include "public_api_types.pb.h"
+#include "public_api_up.pb.h"
+#include "public_api_down.pb.h"
 
-#define EXPECTED_PROTOCOL_MAJOR_VERSION 1
+// ==========================================
+// 0. 全局变量与锁
+// ==========================================
+static pthread_mutex_t g_kcp_mutex = PTHREAD_MUTEX_INITIALIZER;
+static atomic_bool g_running = true;
+static atomic_uint_fast64_t g_session_id = 0;
+static atomic_uint_fast32_t g_kcp_server_port = 0;
+static atomic_bool g_drain_mode = false;
 
-static volatile bool quit = false;
+// 拼包缓冲区
+#define RECV_BUF_SIZE 4096
+static uint8_t g_stream_buf[RECV_BUF_SIZE];
+static size_t g_stream_len = 0;
 
-/* State filled by websocket handler */
-static volatile uint32_t g_session_id = 0;
-static volatile bool g_got_session = false;
-static volatile bool g_got_kcp_server = false;
-static volatile uint32_t g_kcp_server_port = 0;
-static volatile int32_t g_kcp_snd_wnd = 0;
-static volatile int32_t g_kcp_rcv_wnd = 0;
-static volatile int32_t g_kcp_interval = 0;
-static volatile bool g_kcp_no_delay = false;
-static volatile bool g_kcp_nc = false;
-static volatile int32_t g_kcp_resend = 0;
-
-/* Helper to get current time in milliseconds */
-static uint32_t now_ms()
-{
+// ==========================================
+// 1. 辅助工具
+// ==========================================
+static uint32_t current_ms() {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint32_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 }
 
-/* Websocket handler: decode APIUp and extract session_id and KCP server info */
-static void ws_handler(struct mg_connection *c, int ev, void *ev_data)
-{
-    switch (ev)
-    {
-    case MG_EV_WS_OPEN:
-    {
-        // Set initial report frequency to 50Hz to avoid excessive messages on websocket
-        APIDown change_frequency_msg = APIDown_init_default;
-        change_frequency_msg.which_down = APIDown_set_report_frequency_tag;
-        change_frequency_msg.down.set_report_frequency = ReportFrequency_Rf50Hz;
-        uint8_t obuffer[1024];
-        pb_ostream_t stream = pb_ostream_from_buffer(obuffer, sizeof(obuffer));
-        bool status = pb_encode(&stream, APIDown_fields, &change_frequency_msg);
-        size_t change_frequency_buffer_size = stream.bytes_written;
-        if (!status)
-        {
-            printf("Failed to encode APIDown message\n");
-            c->is_closing = 1;
-            quit = true;
-            return;
-        }
-        mg_ws_send(c, obuffer, change_frequency_buffer_size, WEBSOCKET_OP_BINARY);
-        break;
-    }
-    case MG_EV_WS_MSG:
-    {
-        struct mg_ws_message *wm = (struct mg_ws_message *)ev_data;
-        if (!(wm->flags & WEBSOCKET_OP_BINARY))
-        {
-            // Ignore non-binary
-            break;
-        }
-        pb_istream_t stream = pb_istream_from_buffer(wm->data.buf, wm->data.len);
-        APIUp rx_msg = APIUp_init_zero;
-        bool status = pb_decode(&stream, APIUp_fields, &rx_msg);
-        if (!status)
-        {
-            printf("Failed to decode APIUp message\n");
-            c->is_closing = 1;
-            quit = true;
-            return;
-        }
-
-        /* Basic protocol version check */
-        if (rx_msg.protocol_major_version != EXPECTED_PROTOCOL_MAJOR_VERSION)
-        {
-            printf("Protocol major version is not %d, current version: %d. This might cause compatibility issues. Consider upgrading the base firmware.\n", EXPECTED_PROTOCOL_MAJOR_VERSION, rx_msg.protocol_major_version);
-            /* We don't immediately quit here: just warn and stop decoding odometry */
-        }
-
-        /* Save session id if present */
-        if (rx_msg.session_id != 0 && !g_got_session)
-        {
-            g_session_id = rx_msg.session_id;
-            g_got_session = true;
-            printf("Got session id: %u\n", g_session_id);
-        }
-
-        /* If KCP server info present, store it */
-        if (rx_msg.has_kcp_server_status && !g_got_kcp_server)
-        {
-            g_kcp_server_port = rx_msg.kcp_server_status.server_port;
-            g_got_kcp_server = true;
-            if (rx_msg.kcp_server_status.has_kcp_config)
-            {
-                g_kcp_snd_wnd = rx_msg.kcp_server_status.kcp_config.window_size_snd_wnd;
-                g_kcp_rcv_wnd = rx_msg.kcp_server_status.kcp_config.window_size_rcv_wnd;
-                g_kcp_interval = rx_msg.kcp_server_status.kcp_config.interval_ms;
-                g_kcp_no_delay = rx_msg.kcp_server_status.kcp_config.no_delay;
-                g_kcp_nc = rx_msg.kcp_server_status.kcp_config.nc;
-                g_kcp_resend = rx_msg.kcp_server_status.kcp_config.resend;
-            }
-            printf("Got KCP server port: %u\n", g_kcp_server_port);
-        }
-
-        /* Print base odometry if available */
-        if (rx_msg.which_status == APIUp_base_status_tag)
-        {
-            BaseStatus bs = rx_msg.status.base_status;
-            if (bs.has_estimated_odometry)
-            {
-                printf("Estimated odometry (ws): spd_x=%.3f spd_y=%.3f spd_z=%.3f\n",
-                       bs.estimated_odometry.speed_x,
-                       bs.estimated_odometry.speed_y,
-                       bs.estimated_odometry.speed_z);
-            }
-        }
-        break;
-    }
-    case MG_EV_ERROR:
-    {
-        c->is_closing = 1;
-        break;
-    }
-    default:
-        break;
-    }
+static uint32_t read_uint32_le(const uint8_t* buf) {
+    return (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | 
+           ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
 }
 
-/* UDP + KCP helper structures and functions */
-struct udp_user {
-    int fd;
-    struct sockaddr_in server;
-};
-
-static int kcp_udp_output(const char *buf, int len, struct IKCPCB *kcp, void *user)
-{
-    struct udp_user *u = (struct udp_user *)user;
-    ssize_t r = sendto(u->fd, buf, len, 0, (struct sockaddr *)&u->server, sizeof(u->server));
-    if (r < 0)
-    {
-        perror("sendto");
-        return -1;
-    }
-    return 0;
-}
-
-/* Parse hex-socket framed data: header 4 bytes, byte0 = 0x80 | opcode, byte1=0, bytes2-3 little endian length */
-static void handle_app_message(const uint8_t *data, size_t len)
-{
-    size_t pos = 0;
-    while (pos + 4 <= len)
-    {
-        uint8_t b0 = data[pos];
-        uint8_t opcode = b0 & 0x0F;
-        uint16_t mlen = (uint16_t)(data[pos + 2] | (data[pos + 3] << 8));
-        if (pos + 4 + mlen > len)
-            break; /* incomplete */
-        if ((b0 & 0x80) && opcode == 0x2)
-        {
-            /* Binary payload */
-            pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t *)&data[pos + 4], mlen);
-            APIUp msg = APIUp_init_zero;
-            bool ok = pb_decode(&stream, APIUp_fields, &msg);
-            if (!ok)
-            {
-                printf("Failed to decode APIUp from KCP\n");
-            }
-            else
-            {
-                if (msg.which_status == APIUp_base_status_tag)
-                {
-                    BaseStatus bs = msg.status.base_status;
-                    if (bs.has_estimated_odometry)
-                    {
-                        printf("Estimated odometry (kcp): spd_x=%.3f spd_y=%.3f spd_z=%.3f\n",
-                               bs.estimated_odometry.speed_x,
-                               bs.estimated_odometry.speed_y,
-                               bs.estimated_odometry.speed_z);
-                    }
-                }
-            }
-        }
-        pos += 4 + mlen;
-    }
-}
-
-struct kcp_thread_ctx {
-    ikcpcb *kcp;
-    struct udp_user *u;
-};
-
-/* Thread: receive UDP, feed to KCP, extract application messages */
-static void *kcp_recv_thread(void *arg)
-{
-    struct kcp_thread_ctx *ctx = (struct kcp_thread_ctx *)arg;
-    int fd = ctx->u->fd;
-    ikcpcb *kcp = ctx->kcp;
-    uint8_t buf[4096];
-    while (!quit)
-    {
-        struct sockaddr_in from;
-        socklen_t fromlen = sizeof(from);
-        ssize_t n = recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&from, &fromlen);
-        if (n < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            perror("recvfrom");
-            break;
-        }
-        if (n > 0)
-        {
-            /* Feed into KCP */
-            ikcp_input(kcp, (const char *)buf, (long)n);
-            /* Try to receive application messages */
-            while (1)
-            {
-                int peek = ikcp_peeksize(kcp);
-                if (peek <= 0)
-                    break;
-                if (peek > (int)sizeof(buf))
-                {
-                    printf("Message too large: %d\n", peek);
-                    /* drain */
-                    char *tmp = malloc(peek);
-                    if (!tmp) break;
-                    ikcp_recv(kcp, tmp, peek);
-                    free(tmp);
-                    continue;
-                }
-                int rr = ikcp_recv(kcp, (char *)buf, sizeof(buf));
-                if (rr > 0)
-                {
-                    handle_app_message(buf, (size_t)rr);
-                }
-            }
-        }
-
-        /* update kcp state periodically */
-        ikcpcb *k = kcp;
-        uint32_t current = now_ms();
-        ikcp_update(k, current);
-    }
-    return NULL;
-}
-
-/* Helper to create hex-socket header */
-static void make_hex_header(uint8_t *hdr, uint16_t len, uint8_t opcode)
-{
-    hdr[0] = 0x80 | (opcode & 0x0F);
+// 构造 C-Style Header [0x82, 0x00, Len_L, Len_H]
+static void make_header(uint8_t* hdr, uint16_t len) {
+    hdr[0] = 0x82; // Opcode 2
     hdr[1] = 0x00;
     hdr[2] = (uint8_t)(len & 0xFF);
     hdr[3] = (uint8_t)((len >> 8) & 0xFF);
 }
 
-int main(int argc, char *argv[])
-{
-    const char *url = argc > 1 ? argv[1] : "ws://127.0.0.1:8439/websocket";
-    /* If user passed IP:PORT as arg without ws:// prefix, allow that style too */
-    if (argc > 1 && strstr(argv[1], "ws://") == NULL)
-    {
-        char tmp[256];
-        snprintf(tmp, sizeof(tmp), "ws://%s/websocket", argv[1]);
-        url = strdup(tmp);
-    }
+// ==========================================
+// 2. 网络上下文结构
+// ==========================================
+typedef struct {
+    int udp_fd;
+    struct sockaddr_in remote_addr;
+    ikcpcb* kcp;
+} KcpContext;
 
+static int udp_output(const char *buf, int len, ikcpcb *kcp, void *user) {
+    KcpContext* ctx = (KcpContext*)user;
+    sendto(ctx->udp_fd, buf, len, 0, (struct sockaddr*)&ctx->remote_addr, sizeof(ctx->remote_addr));
+    return 0;
+}
+
+// ==========================================
+// 3. 业务逻辑：处理接收到的数据 (含拼包)
+// ==========================================
+static void process_payload(const uint8_t* data, size_t len) {
+    // 追加数据到缓冲区
+    if (g_stream_len + len > RECV_BUF_SIZE) {
+        printf("[Err] Buffer overflow, resetting\n");
+        g_stream_len = 0;
+        return;
+    }
+    memcpy(g_stream_buf + g_stream_len, data, len);
+    g_stream_len += len;
+
+    while (1) {
+        if (g_stream_len < 4) break; // 数据不足头长度
+
+        uint8_t b0 = g_stream_buf[0];
+        uint32_t payload_len = 0;
+        size_t header_len = 0;
+        int is_proto = 0;
+
+        // 探测头格式
+        if (b0 >= 0x80) { // C-Style [0x82, 0x00, Len_L, Len_H]
+            payload_len = (uint16_t)((uint8_t)g_stream_buf[2] | ((uint8_t)g_stream_buf[3] << 8));
+            header_len = 4;
+            is_proto = 1;
+        } else if (b0 <= 5) { // Rust-Style
+            if (g_stream_len < 5) break; 
+            payload_len = read_uint32_le(g_stream_buf + 1);
+            header_len = 5;
+            is_proto = 1;
+        } else {
+            // 未知数据，移除1字节尝试重同步
+            memmove(g_stream_buf, g_stream_buf + 1, g_stream_len - 1);
+            g_stream_len--;
+            continue;
+        }
+
+        // 检查包是否完整
+        if (g_stream_len < header_len + payload_len) break; // 等待更多数据
+
+        // 解析 Protobuf
+        if (is_proto) {
+            APIUp msg = APIUp_init_zero;
+            pb_istream_t stream = pb_istream_from_buffer(g_stream_buf + header_len, payload_len);
+            
+            if (pb_decode(&stream, APIUp_fields, &msg)) {
+                if (msg.which_status == APIUp_base_status_tag) {
+                    if (msg.status.base_status.has_estimated_odometry) {
+                        BaseEstimatedOdometry* odom = &msg.status.base_status.estimated_odometry;
+                        // printf("[Info] Odom:%s",msg.status.base_status.estimated_odometry);
+                        printf("[Info] Odom: x=%.3f, y=%.3f, z=%.3f\n", 
+                               odom->speed_x, odom->speed_y, odom->speed_z);
+                    } else {
+                        // printf("[Status] State: %d\n", msg.status.base_status.state);
+                    }
+                }
+            }
+        }
+
+        // 移除已处理的包
+        size_t total_consumed = header_len + payload_len;
+        memmove(g_stream_buf, g_stream_buf + total_consumed, g_stream_len - total_consumed);
+        g_stream_len -= total_consumed;
+    }
+}
+
+// ==========================================
+// 4. 后台线程：KCP Update 和 UDP Recv
+// ==========================================
+static void* kcp_worker_thread(void* arg) {
+    KcpContext* ctx = (KcpContext*)arg;
+    uint8_t buf[2048];
+
+    while (g_running) {
+        // 1. KCP Update (加锁)
+        uint32_t now = current_ms();
+        pthread_mutex_lock(&g_kcp_mutex);
+        if (ctx->kcp) {
+            ikcp_update(ctx->kcp, now);
+        }
+        pthread_mutex_unlock(&g_kcp_mutex);
+
+        // 2. 尝试接收 UDP 数据 (非阻塞或超时)
+        // 为了简单，这里使用 select 设置超时来控制 update 频率 (5ms)
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(ctx->udp_fd, &fds);
+        struct timeval tv = {0, 5000}; // 5ms
+
+        int ret = select(ctx->udp_fd + 1, &fds, NULL, NULL, &tv);
+        if (ret > 0 && FD_ISSET(ctx->udp_fd, &fds)) {
+            ssize_t n = recvfrom(ctx->udp_fd, buf, sizeof(buf), 0, NULL, NULL);
+            if (n > 0) {
+                pthread_mutex_lock(&g_kcp_mutex);
+                if (ctx->kcp) {
+                    ikcp_input(ctx->kcp, (char*)buf, n);
+                    // 循环读取 KCP 组装好的数据
+                    while (1) {
+                        int peek_size = ikcp_peeksize(ctx->kcp);
+                        if (peek_size <= 0) break;
+                        
+                        uint8_t* rx_buf = malloc(peek_size);
+                        int recv_len = ikcp_recv(ctx->kcp, (char*)rx_buf, peek_size);
+                        if (recv_len > 0) {
+                            process_payload(rx_buf, recv_len);
+                        }
+                        free(rx_buf);
+                    }
+                }
+                pthread_mutex_unlock(&g_kcp_mutex);
+            }
+        }
+    }
+    return NULL;
+}
+
+// 辅助：通过 KCP 发送 Protobuf
+static void kcp_send_proto(KcpContext* ctx, const APIDown* msg) {
+    uint8_t payload[1024];
+    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+    
+    if (!pb_encode(&stream, APIDown_fields, msg)) return;
+    
+    size_t len = stream.bytes_written;
+    uint8_t header[4];
+    make_header(header, (uint16_t)len);
+
+    // 拼接 Header + Payload
+    uint8_t* frame = malloc(4 + len);
+    memcpy(frame, header, 4);
+    memcpy(frame + 4, payload, len);
+
+    pthread_mutex_lock(&g_kcp_mutex);
+    if (ctx->kcp && g_running) {
+        ikcp_send(ctx->kcp, (char*)frame, 4 + len);
+        ikcp_flush(ctx->kcp);
+    }
+    pthread_mutex_unlock(&g_kcp_mutex);
+    free(frame);
+}
+
+// 辅助：通过 WebSocket 发送 Protobuf
+static void ws_send_proto(struct mg_connection *c, const APIDown* msg) {
+    uint8_t payload[1024];
+    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+    if (pb_encode(&stream, APIDown_fields, msg)) {
+        mg_ws_send(c, payload, stream.bytes_written, WEBSOCKET_OP_BINARY);
+    }
+}
+
+// ==========================================
+// 5. WebSocket 事件回调
+// ==========================================
+static void ws_event_handler(struct mg_connection *c, int ev, void *ev_data) {
+    if (ev == MG_EV_WS_MSG) {
+        if (g_drain_mode) return; // Drain Mode
+
+        struct mg_ws_message *wm = (struct mg_ws_message *)ev_data;
+        if (wm->flags & WEBSOCKET_OP_BINARY) {
+            APIUp msg = APIUp_init_zero;
+            pb_istream_t stream = pb_istream_from_buffer(wm->data.buf, wm->data.len);
+            if (pb_decode(&stream, APIUp_fields, &msg)) {
+                // 提取 Session ID
+                if (g_session_id == 0 && msg.session_id != 0) {
+                    g_session_id = msg.session_id;
+                    // printf("[Step 1] Got Session ID: %lu\n", g_session_id);
+                }
+                // 提取 KCP 端口
+                if (msg.has_kcp_server_status) {
+                    int port = msg.kcp_server_status.server_port;
+                    if (port != 0 && g_kcp_server_port == 0) {
+                        g_kcp_server_port = port;
+                        // printf("[Step 4] Got KCP Port: %d\n", g_kcp_server_port);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// 6. 主函数
+// ==========================================
+int main(int argc, char* argv[]) {
+    // 处理参数
+    const char* ip = (argc >= 2) ? argv[1] : "127.0.0.1";
+    char url[128];
+    snprintf(url, sizeof(url), "ws://%s:8439", ip);
+    
+    printf("[Sys] Connecting to: %s\n", url);
+
+    // 1. 初始化 Mongoose (WebSocket)
     struct mg_mgr mgr;
     mg_mgr_init(&mgr);
-
-    mg_log_set(MG_LL_INFO);
-
-    /* Connect websocket */
-    struct mg_connection *c = mg_ws_connect(&mgr, url, ws_handler, NULL, NULL);
-    if (c == NULL)
-    {
-        fprintf(stderr, "Failed to start WS connection to %s\n", url);
-        mg_mgr_free(&mgr);
+    struct mg_connection *c = mg_ws_connect(&mgr, url, ws_event_handler, NULL, NULL);
+    if (!c) {
+        printf("[Err] WS Connect Failed\n");
         return 1;
     }
 
-    /* Prepare common APIDown messages */
-    APIDown init_msg = APIDown_init_default;
-    init_msg.which_down = APIDown_base_command_tag;
-    init_msg.down.base_command.which_command = BaseCommand_api_control_initialize_tag;
-    init_msg.down.base_command.command.api_control_initialize = true;
-    uint8_t init_buffer[1024];
-    pb_ostream_t stream = pb_ostream_from_buffer(init_buffer, sizeof(init_buffer));
-    bool status = pb_encode(&stream, APIDown_fields, &init_msg);
-    if (!status)
-    {
-        printf("Failed to encode APIDown init message\n");
-        quit = true;
-    }
-    size_t init_buffer_size = stream.bytes_written;
+    // 2. 循环等待 Session ID
+    while (g_session_id == 0 && g_running) mg_mgr_poll(&mgr, 10);
+    printf("[Step 1] Session ID: %lu\n", g_session_id);
 
-    APIDown deinit_msg = APIDown_init_default;
-    deinit_msg.which_down = APIDown_base_command_tag;
-    deinit_msg.down.base_command.which_command = BaseCommand_api_control_initialize_tag;
-    deinit_msg.down.base_command.command.api_control_initialize = false;
-    uint8_t deinit_buffer[1024];
-    stream = pb_ostream_from_buffer(deinit_buffer, sizeof(deinit_buffer));
-    status = pb_encode(&stream, APIDown_fields, &deinit_msg);
-    if (!status)
-    {
-        printf("Failed to encode APIDown deinit message\n");
-        quit = true;
-    }
-    size_t deinit_buffer_size = stream.bytes_written;
+    // 3. 初始化 UDP
+    int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in local_addr = {0};
+    local_addr.sin_family = AF_INET;
+    local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    local_addr.sin_port = 0; // 自动分配
+    bind(udp_fd, (struct sockaddr*)&local_addr, sizeof(local_addr));
+    
+    socklen_t addr_len = sizeof(local_addr);
+    getsockname(udp_fd, (struct sockaddr*)&local_addr, &addr_len);
+    uint16_t local_port = ntohs(local_addr.sin_port);
+    printf("[Step 2] Local UDP Port: %d\n", local_port);
 
-    /* Prepare move message template */
-    APIDown move_msg = APIDown_init_default;
+    // 4. 通过 WS 发送 EnableKCP
+    {
+        APIDown msg = APIDown_init_zero;
+        msg.which_down = APIDown_enable_kcp_tag;
+        msg.down.enable_kcp.client_peer_port = local_port;
+        msg.down.enable_kcp.has_kcp_config = true;
+        msg.down.enable_kcp.kcp_config.window_size_snd_wnd = 128;
+        msg.down.enable_kcp.kcp_config.window_size_rcv_wnd = 128;
+        msg.down.enable_kcp.kcp_config.interval_ms = 10;
+        msg.down.enable_kcp.kcp_config.no_delay = true;
+        msg.down.enable_kcp.kcp_config.nc = true;
+        msg.down.enable_kcp.kcp_config.resend = 2;
+        ws_send_proto(c, &msg);
+    }
+
+    // 5. 等待 KCP Server Port
+    while (g_kcp_server_port == 0 && g_running) mg_mgr_poll(&mgr, 10);
+    printf("[Step 4] Server KCP Port: %d\n", g_kcp_server_port);
+
+    // 6. 初始化 KCP 上下文
+    KcpContext kcp_ctx;
+    kcp_ctx.udp_fd = udp_fd;
+    kcp_ctx.remote_addr.sin_family = AF_INET;
+    kcp_ctx.remote_addr.sin_port = htons(g_kcp_server_port);
+    inet_pton(AF_INET, ip, &kcp_ctx.remote_addr.sin_addr);
+
+    kcp_ctx.kcp = ikcp_create((uint32_t)g_session_id, &kcp_ctx);
+    kcp_ctx.kcp->output = udp_output;
+    ikcp_nodelay(kcp_ctx.kcp, 1, 10, 2, 1);
+    ikcp_wndsize(kcp_ctx.kcp, 128, 128);
+    ikcp_setmtu(kcp_ctx.kcp, 1400);
+
+    // 7. 启动后台线程 (Update & Recv)
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, kcp_worker_thread, &kcp_ctx);
+
+    // 8. 激活 KCP
+    {
+        APIDown msg = APIDown_init_zero;
+        msg.which_down = APIDown_placeholder_message_tag;
+        msg.down.placeholder_message = true;
+        kcp_send_proto(&kcp_ctx, &msg);
+        printf("[Step 6] KCP Activated\n");
+    }
+
+    // 9. WS 降频 & 清除停车
+    {
+        APIDown msg1 = APIDown_init_zero;
+        msg1.which_down = APIDown_set_report_frequency_tag;
+        msg1.down.set_report_frequency = ReportFrequency_Rf1Hz;
+        ws_send_proto(c, &msg1);
+
+        APIDown msg2 = APIDown_init_zero;
+        msg2.which_down = APIDown_base_command_tag;
+        msg2.down.base_command.which_command = BaseCommand_clear_parking_stop_tag;
+        msg2.down.base_command.command.clear_parking_stop = true;
+        ws_send_proto(c, &msg2);
+    }
+
+    g_drain_mode = true; // 忽略后续 WS 消息
+
+    // 10. KCP 升频 & Init Base
+    {
+        APIDown msg1 = APIDown_init_zero;
+        msg1.which_down = APIDown_set_report_frequency_tag;
+        msg1.down.set_report_frequency = ReportFrequency_Rf250Hz;
+        kcp_send_proto(&kcp_ctx, &msg1);
+
+        APIDown msg2 = APIDown_init_zero;
+        msg2.which_down = APIDown_base_command_tag;
+        msg2.down.base_command.which_command = BaseCommand_api_control_initialize_tag;
+        msg2.down.base_command.command.api_control_initialize = true;
+        kcp_send_proto(&kcp_ctx, &msg2);
+        printf("[Step 11] Base Initialized\n");
+    }
+
+    // 11. 主循环
+    printf("[Step 12] Start Moving Loop (10s)...\n");
+    uint32_t start_time = current_ms();
+    uint32_t last_ws_hb = 0;
+
+    APIDown move_msg = APIDown_init_zero;
     move_msg.which_down = APIDown_base_command_tag;
     move_msg.down.base_command.which_command = BaseCommand_simple_move_command_tag;
     move_msg.down.base_command.command.simple_move_command.which_command = SimpleBaseMoveCommand_xyz_speed_tag;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_x = 0.0;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_y = 0.0;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_z = 0.1;
-    uint8_t move_buffer[1024];
-    stream = pb_ostream_from_buffer(move_buffer, sizeof(move_buffer));
-    status = pb_encode(&stream, APIDown_fields, &move_msg);
-    size_t move_buffer_size = stream.bytes_written;
-    if (!status)
-    {
-        printf("Failed to encode APIDown move message\n");
-        quit = true;
+    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_x = 0.1;
+
+    APIDown hb_msg = APIDown_init_zero;
+    hb_msg.which_down = APIDown_placeholder_message_tag;
+    hb_msg.down.placeholder_message = true;
+
+    while ((current_ms() - start_time) < 1000*60*10) {
+        // A. KCP 移动指令
+        kcp_send_proto(&kcp_ctx, &move_msg);
+
+        // B. WS 心跳 (1Hz)
+        uint32_t now = current_ms();
+        if (now - last_ws_hb >= 1000) {
+            ws_send_proto(c, &hb_msg);
+            last_ws_hb = now;
+        }
+
+        // C. Mongoose Poll (保持 WS 连接活跃)
+        mg_mgr_poll(&mgr, 0);
+
+        usleep(4000); // 4ms
     }
 
-    /* Wait until we receive a session id from websocket */
-    while (!g_got_session && !quit)
+    // 12. Deinit
     {
-        mg_mgr_poll(&mgr, 100);
-    }
-    if (quit)
-    {
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-
-    /* Create UDP socket and bind to ephemeral port */
-    int udpfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udpfd < 0)
-    {
-        perror("socket");
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-    struct sockaddr_in local;
-    memset(&local, 0, sizeof(local));
-    local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);
-    local.sin_port = 0; /* ephemeral */
-    if (bind(udpfd, (struct sockaddr *)&local, sizeof(local)) < 0)
-    {
-        perror("bind");
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-    socklen_t loclen = sizeof(local);
-    if (getsockname(udpfd, (struct sockaddr *)&local, &loclen) < 0)
-    {
-        perror("getsockname");
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-    uint16_t local_port = ntohs(local.sin_port);
-    printf("Local UDP port = %u\n", local_port);
-
-    /* Send EnableKcp via websocket, informing server of our UDP port and desired KCP config */
-    APIDown enable_kcp = APIDown_init_default;
-    enable_kcp.which_down = APIDown_enable_kcp_tag;
-    enable_kcp.down.enable_kcp.client_peer_port = local_port;
-    enable_kcp.down.enable_kcp.has_kcp_config = true;
-    enable_kcp.down.enable_kcp.kcp_config.window_size_snd_wnd = 64;
-    enable_kcp.down.enable_kcp.kcp_config.window_size_rcv_wnd = 64;
-    enable_kcp.down.enable_kcp.kcp_config.interval_ms = 10;
-    enable_kcp.down.enable_kcp.kcp_config.no_delay = true;
-    enable_kcp.down.enable_kcp.kcp_config.nc = true;
-    enable_kcp.down.enable_kcp.kcp_config.resend = 2;
-    uint8_t enable_buffer[256];
-    stream = pb_ostream_from_buffer(enable_buffer, sizeof(enable_buffer));
-    status = pb_encode(&stream, APIDown_fields, &enable_kcp);
-    if (!status)
-    {
-        printf("Failed to encode APIDown enable_kcp message\n");
-    }
-    size_t enable_buffer_size = stream.bytes_written;
-    mg_ws_send(c, enable_buffer, enable_buffer_size, WEBSOCKET_OP_BINARY);
-
-    /* Wait for server to respond with kcp_server_status */
-    while (!g_got_kcp_server && !quit)
-    {
-        mg_mgr_poll(&mgr, 100);
-    }
-    if (quit)
-    {
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
+        APIDown msg = APIDown_init_zero;
+        msg.which_down = APIDown_base_command_tag;
+        msg.down.base_command.which_command = BaseCommand_api_control_initialize_tag;
+        msg.down.base_command.command.api_control_initialize = false;
+        ws_send_proto(c, &msg);
+        printf("[Info] Successfully deinitialized base\n");
     }
 
-    /* Build server sockaddr */
-    struct udp_user u;
-    memset(&u, 0, sizeof(u));
-    u.fd = udpfd;
-    /* Extract host from url: expecting ws://IP:PORT/... */
-    char hostbuf[128] = {0};
-    {
-        const char *p = strstr(url, "//");
-        if (p)
-            p += 2;
-        else
-            p = url;
-        const char *col = strchr(p, ':');
-        const char *slash = strchr(p, '/');
-        size_t hlen = 0;
-        if (col && (!slash || col < slash))
-            hlen = (size_t)(col - p);
-        else if (slash)
-            hlen = (size_t)(slash - p);
-        else
-            hlen = strlen(p);
-        if (hlen >= sizeof(hostbuf))
-            hlen = sizeof(hostbuf) - 1;
-        memcpy(hostbuf, p, hlen);
-        hostbuf[hlen] = '\0';
-    }
-    u.server.sin_family = AF_INET;
-    u.server.sin_port = htons((uint16_t)g_kcp_server_port);
-    if (inet_pton(AF_INET, hostbuf, &u.server.sin_addr) <= 0)
-    {
-        fprintf(stderr, "Failed to parse host %s\n", hostbuf);
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
-    }
+    // 13. 优雅退出
+    g_running = false; // 通知线程停止
+    pthread_join(thread_id, NULL); // 等待线程结束
 
-    /* Create KCP instance with conv = session_id */
-    ikcpcb *kcp = ikcp_create((IUINT32)g_session_id, &u);
-    if (!kcp)
-    {
-        fprintf(stderr, "Failed to create KCP instance\n");
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-    ikcp_setoutput(kcp, kcp_udp_output);
-    /* Apply KCP config from server if present, otherwise use our suggested */
-    int snd_wnd = (g_kcp_snd_wnd > 0) ? g_kcp_snd_wnd : 64;
-    int rcv_wnd = (g_kcp_rcv_wnd > 0) ? g_kcp_rcv_wnd : 64;
-    int interval = (g_kcp_interval > 0) ? g_kcp_interval : 10;
-    bool no_delay = g_kcp_no_delay || !g_got_kcp_server;
-    bool nc = g_kcp_nc || !g_got_kcp_server;
-    int resend = (g_kcp_resend > 0) ? g_kcp_resend : 2;
-    ikcp_wndsize(kcp, snd_wnd, rcv_wnd);
-    ikcp_nodelay(kcp, no_delay ? 1 : 0, interval, resend, nc ? 1 : 0);
-
-    /* Start recv thread */
-    pthread_t th;
-    struct kcp_thread_ctx ctx;
-    ctx.kcp = kcp;
-    ctx.u = &u;
-    if (pthread_create(&th, NULL, kcp_recv_thread, &ctx) != 0)
-    {
-        perror("pthread_create");
-        ikcp_release(kcp);
-        close(udpfd);
-        mg_mgr_free(&mgr);
-        return 1;
-    }
-
-    /* Send a placeholder message over KCP to activate server-side KCP */
-    APIDown placeholder = APIDown_init_default;
-    placeholder.which_down = APIDown_placeholder_message_tag;
-    placeholder.down.placeholder_message = true;
-    uint8_t placeholder_buf[256];
-    stream = pb_ostream_from_buffer(placeholder_buf, sizeof(placeholder_buf));
-    status = pb_encode(&stream, APIDown_fields, &placeholder);
-    size_t placeholder_len = stream.bytes_written;
-    if (status)
-    {
-        uint8_t header[4];
-        make_hex_header(header, (uint16_t)placeholder_len, 0x2);
-        /* concatenate header + payload */
-        uint8_t *sendbuf = malloc(4 + placeholder_len);
-        memcpy(sendbuf, header, 4);
-        memcpy(sendbuf + 4, placeholder_buf, placeholder_len);
-        ikcp_send(kcp, (const char *)sendbuf, (int)(4 + placeholder_len));
-        free(sendbuf);
-    }
-
-    /* Change websocket report frequency to 1Hz (optional but recommended) */
-    APIDown set_rf = APIDown_init_default;
-    set_rf.which_down = APIDown_set_report_frequency_tag;
-    set_rf.down.set_report_frequency = ReportFrequency_Rf1Hz;
-    uint8_t setrf_buf[128];
-    stream = pb_ostream_from_buffer(setrf_buf, sizeof(setrf_buf));
-    status = pb_encode(&stream, APIDown_fields, &set_rf);
-    if (status)
-    {
-        mg_ws_send(c, setrf_buf, stream.bytes_written, WEBSOCKET_OP_BINARY);
-    }
-
-    /* Initialize base via KCP */
-    APIDown init_kcp = APIDown_init_default;
-    init_kcp.which_down = APIDown_base_command_tag;
-    init_kcp.down.base_command.which_command = BaseCommand_api_control_initialize_tag;
-    init_kcp.down.base_command.command.api_control_initialize = true;
-    uint8_t init_kcp_buf[256];
-    stream = pb_ostream_from_buffer(init_kcp_buf, sizeof(init_kcp_buf));
-    status = pb_encode(&stream, APIDown_fields, &init_kcp);
-    if (status)
-    {
-        uint8_t header[4];
-        make_hex_header(header, (uint16_t)stream.bytes_written, 0x2);
-        uint8_t *sendbuf = malloc(4 + stream.bytes_written);
-        memcpy(sendbuf, header, 4);
-        memcpy(sendbuf + 4, init_kcp_buf, stream.bytes_written);
-        ikcp_send(kcp, (const char *)sendbuf, (int)(4 + stream.bytes_written));
-        free(sendbuf);
-    }
-
-    /* Send move messages over KCP for 10 seconds at 50Hz (20ms) */
-    uint32_t start = now_ms();
-    int count = 0;
-    while (!quit && (now_ms() - start) < 10000)
-    {
-        uint8_t header[4];
-        make_hex_header(header, (uint16_t)move_buffer_size, 0x2);
-        uint8_t *sendbuf = malloc(4 + move_buffer_size);
-        memcpy(sendbuf, header, 4);
-        memcpy(sendbuf + 4, move_buffer, move_buffer_size);
-        ikcp_send(kcp, (const char *)sendbuf, (int)(4 + move_buffer_size));
-        free(sendbuf);
-        count++;
-        /* Let mgr run so websocket messages are processed */
-        mg_mgr_poll(&mgr, 1);
-        usleep(20 * 1000);
-    }
-
-    printf("Sent %d KCP move messages\n", count);
-
-    /* Send final deinit message over websocket to ensure deinitialization */
-    printf("Sending deinit message over websocket\n");
-    mg_ws_send(c, deinit_buffer, deinit_buffer_size, WEBSOCKET_OP_BINARY);
-    while (c->send.len > 0)
-    {
-        mg_mgr_poll(&mgr, 1);
-    }
-    c->is_closing = 1;
-    mg_mgr_poll(&mgr, 1);
-
-    /* teardown */
-    quit = true;
-    pthread_join(th, NULL);
-    ikcp_release(kcp);
-    close(udpfd);
+    // 销毁资源
+    if (kcp_ctx.kcp) ikcp_release(kcp_ctx.kcp);
+    close(udp_fd);
     mg_mgr_free(&mgr);
+    
+    printf("[Sys] Application Exit\n");
     return 0;
 }
