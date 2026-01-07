@@ -49,12 +49,24 @@ async fn main() {
         (msg.session_id, ws_stream)
     };
 
-    let kcp_socket = UdpSocket::bind(std::net::SocketAddr::new(
-        std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-        0,
-    ))
-    .await
-    .unwrap();
+    // Check if args.url is ipv4 or ipv6
+    let ip_addr = args.url.parse::<std::net::IpAddr>().unwrap();
+    let kcp_socket = if ip_addr.is_ipv4() {
+        UdpSocket::bind(std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
+            0,
+        ))
+        .await
+        .unwrap()
+    } else {
+        UdpSocket::bind(std::net::SocketAddr::new(
+            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+            0,
+        ))
+        .await
+        .unwrap()
+    };
+
     let local_port = kcp_socket.local_addr().unwrap().port();
 
     // Enable KCP
