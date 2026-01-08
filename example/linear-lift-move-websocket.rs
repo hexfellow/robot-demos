@@ -17,6 +17,11 @@ struct Args {
     port: u16,
     #[arg(help = "Percentage of max position to move to (e.g. 0.5)")]
     percentage: f64,
+    #[arg(
+        help = "How fast to move (e.g. 0.9), default is 0.9",
+        default_value = "0.9"
+    )]
+    speed_factor: f64,
 }
 
 lazy_static::lazy_static! {
@@ -31,6 +36,11 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
+    assert!(
+        args.speed_factor > 0.0 && args.speed_factor <= 1.0,
+        "Speed factor must be between 0.0 and 1.0, got: {}",
+        args.speed_factor
+    );
     if args.percentage < 0.0 || args.percentage > 1.0 {
         panic!(
             "Percentage must be between 0.0 and 1.0, got: {}",
@@ -113,7 +123,7 @@ async fn main() {
     let move_target = (args.percentage * max as f64) as i64;
 
     // Set speed to 90% of max speed
-    let speed = (max_speed as f64 * 0.9) as u32;
+    let speed = (max_speed as f64 * args.speed_factor) as u32;
     send_api_down_message_to_websocket(
         &mut ws_sink,
         proto_public_api::ApiDown {

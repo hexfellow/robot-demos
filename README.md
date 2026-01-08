@@ -105,6 +105,17 @@ cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5
 cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5
 ```
 
+Move lift to 50% off the zero position, at 10% of max speed. (Full speed might be a little too noisy for some lifts.)
+```bash
+# IPV4. Change IP Address to your own.
+cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5 0.1
+```
+
+```bash
+# IPV6. Change IP Address and Zone id to your own.
+cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5 0.1
+```
+
 ### Demo: Read Time Stamp from PTP Clock
 > This is an advanced demo. There will be no explanation for this demo.
 
