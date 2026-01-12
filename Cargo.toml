@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "hello-read"
+path = "example/hello-read.rs"
+required-features = ["kcp"]
+
+[[bin]]
 name = "base-ez-control"
 path = "example/base-ez-control.rs"
 required-features = ["kcp"]

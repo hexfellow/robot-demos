@@ -1,4 +1,4 @@
-// This is a demo controling arm to zero torque, while printing data from the arm.
+// This is a demo reading info from HELLO, and making the controller's leds green.
 
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
@@ -9,8 +9,6 @@ use robot_demos::{
     decode_message, decode_websocket_message, proto_public_api, send_api_down_message_to_websocket,
 };
 use tokio::net::UdpSocket;
-
-static MOTOR_CNT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
 #[derive(Parser)]
 struct Args {
@@ -182,14 +180,7 @@ async fn main() {
                         if let Some(status) = msg.status.clone() {
                             match status {
                                 proto_public_api::api_up::Status::ArmStatus(arm_status) => {
-                                    // Prints motor status
-                                    let mut pos = Vec::new();
-                                    let len = arm_status.motor_status.len();
-                                    MOTOR_CNT.get_or_init(|| len);
-                                    for motor_status in arm_status.motor_status {
-                                        pos.push(motor_status.position);
-                                    }
-                                    info!("Position: {:?}", pos);
+                                    info!("Arm Status: {:?}. Secondary Device Status: {:?}", arm_status, msg.secondary_device_status);
                                 }
                                 _ => {
                                     panic!("Expected ArmStatus, got other robot status {:?}", msg)
@@ -214,15 +205,6 @@ async fn main() {
     )
     .await
     .expect("Failed to send initialize message");
-
-    let motor_cnt = loop {
-        let res = MOTOR_CNT.get();
-        if let Some(motor_cnt) = res {
-            break *motor_cnt;
-        } else {
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-    };
 
     // Before sending move command, we need to set initialize the arm first.
     KcpPortOwner::send_binary(
@@ -266,23 +248,23 @@ async fn main() {
     .await
     .expect("Failed to send initialize message");
 
-    // Down, arm command, command, arm_exclusive_command, exclusive_command, command, motor_targets, targets, torque = 0.0
-    let zero_torque_message = proto_public_api::ApiDown {
-        down: Some(proto_public_api::api_down::Down::ArmCommand(
-            proto_public_api::ArmCommand {
-                command: Some(proto_public_api::arm_command::Command::ArmExclusiveCommand(
-                    proto_public_api::ArmExclusiveCommand {
-                        exclusive_command: Some(proto_public_api::arm_exclusive_command::ExclusiveCommand::ArmApiControlCommand(
-                            proto_public_api::ArmApiControlCommand {
-                                command: Some(proto_public_api::arm_api_control_command::Command::MotorTargets(
-                                    proto_public_api::MotorTargets {
-                                        targets: (0..motor_cnt).map(|_i| proto_public_api::SingleMotorTarget {
-                                            target: Some(proto_public_api::single_motor_target::Target::Torque(0.0)),
-                                        }).collect(),
-                                    },
-                                )),
+    // Makes all 6 leds on the controller green.
+    // Must not send this command too often. Every command sent will use the CAN bus bandwidth.
+    // If you send this command too often, expect things to go boom.
+    // RGB color format: little-endian bytes [R, G, B, ignored]
+    // For green: R=0, G=255, B=0 -> (255 << 8) = 65280
+    let green_color = 255 << 8;
+    let green_light_command = proto_public_api::ApiDown {
+        down: Some(proto_public_api::api_down::Down::SecondaryDeviceCommand(
+            proto_public_api::SecondaryDeviceCommand {
+                device_id: 1,
+                command: Some(proto_public_api::secondary_device_command::Command::Hello1j1t4bControllerCommand(
+                    proto_public_api::Hello1J1t4bCmd { 
+                        command: Some(proto_public_api::hello1_j1t4b_cmd::Command::RgbStripeCommand(
+                            proto_public_api::RgbStripeCommand {
+                                rgbs: vec![green_color; 6], // 6 LEDs all set to green
                             }
-                        )),
+                        )) 
                     }
                 )),
             }
@@ -292,9 +274,9 @@ async fn main() {
     let start_time = std::time::Instant::now();
     while start_time.elapsed() < std::time::Duration::from_secs(10) {
         // You can also use tokio's tick if you want
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         // Send binary messages
-        KcpPortOwner::send_binary(&tx, zero_torque_message.encode_to_vec())
+        KcpPortOwner::send_binary(&tx, green_light_command.encode_to_vec())
             .await
             .expect("Failed to send zero torque message");
     }
