@@ -22,6 +22,12 @@ struct Args {
         default_value = "0.9"
     )]
     speed_factor: f64,
+    #[arg(
+        long,
+        help = "If calibrate before moving, default is false",
+        action = clap::ArgAction::SetTrue
+    )]
+    re_calibrate: bool,
 }
 
 lazy_static::lazy_static! {
@@ -88,12 +94,19 @@ async fn main() {
                         "Current position: {:?}m, Max position: {:?}m, Percentage: {:?}, Raw Current Position: {:?}, Raw Max Position: {:?}",
                         current_meter, max_meter, percentage, current, max
                     );
+                    } else if linear_lift_status.state()
+                        == proto_public_api::LiftState::LsCalibrating
+                    {
+                        info!("Lift is calibrating");
                     } else {
-                        info!("Lift is not yet calibrated");
+                        error!("Lift is not yet calibrated, and is not calibrating. This should only happen if you've triggered a clearable parking stop, or pressed the emergency stop button, or motor has error. You should send calibrate command, or restart the robot. Or you can use with `--re-calibrate` flag to handle this case.");
                     }
                 }
                 // Add other handles yourself
                 _ => {}
+            }
+            if let Some(log) = msg.log {
+                warn!("Log from robot: {}", log);
             }
         }
     });
@@ -108,6 +121,24 @@ async fn main() {
     )
     .await
     .expect("Failed to send set report frequency message");
+
+    // Send calibrate command if required
+    if args.re_calibrate {
+        send_api_down_message_to_websocket(
+            &mut ws_sink,
+            proto_public_api::ApiDown {
+                down: Some(proto_public_api::api_down::Down::LinearLiftCommand(
+                    proto_public_api::LinearLiftCommand {
+                        command: Some(proto_public_api::linear_lift_command::Command::Calibrate(
+                            true,
+                        )),
+                    },
+                )),
+            },
+        )
+        .await
+        .expect("Failed to send calibrate message");
+    }
 
     let start_time = std::time::Instant::now();
     let (max, max_speed) = {
