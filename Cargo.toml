@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "basic-websocket"
+path = "example/basic-websocket.rs"
+
+[[bin]]
 name = "hello-read"
 path = "example/hello-read.rs"
 required-features = ["kcp"]
@@ -16,10 +20,6 @@ required-features = ["kcp"]
 [[bin]]
 name = "base-ez-control-websocket"
 path = "example/base-ez-control-websocket.rs"
-
-[[bin]]
-name = "who-i-am-websocket"
-path = "example/who-i-am-websocket.rs"
 
 [[bin]]
 name = "linear-lift-move-websocket"

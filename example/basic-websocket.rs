@@ -1,5 +1,4 @@
-// Connect to robot, print it's type and exit.
-// Use this if you lost QR code of device id.
+// This is a read-only demo that only prints the basic information from the robot.
 
 use clap::Parser;
 use futures_util::StreamExt;
@@ -48,12 +47,14 @@ async fn main() {
     }
     let (_, mut ws_stream) = ws_stream.split();
 
-    let msg = ws_stream.next().await.unwrap().unwrap();
-    let msg = decode_websocket_message(msg).unwrap();
-    info!(
-        "I am {}, {}. My protocol major version is {}",
-        msg.robot_type().as_str_name(),
-        msg.robot_type,
-        msg.protocol_major_version
-    );
+    // Spawn the print task
+    tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            let msg = decode_websocket_message(msg, true).unwrap();
+            info!("The robot type is: {}. Robot protocol major version: {}. Robot protocol minor version: {}. Session ID: {}. Current report frequency: {}.", msg.robot_type().as_str_name(), msg.protocol_major_version, msg.protocol_minor_version, msg.session_id, msg.report_frequency().as_str_name());
+        }
+    });
+
+    // Keep printing basic information from the robot.
+    std::future::pending::<()>().await;
 }

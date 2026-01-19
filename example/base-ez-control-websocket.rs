@@ -53,7 +53,7 @@ async fn main() {
     // Spawn the print task
     tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
-            let msg = decode_websocket_message(msg).unwrap();
+            let msg = decode_websocket_message(msg, true).unwrap();
             match msg.status {
                 Some(proto_public_api::api_up::Status::BaseStatus(base_status)) => {
                     if let Some(estimated_odometry) = base_status.estimated_odometry {

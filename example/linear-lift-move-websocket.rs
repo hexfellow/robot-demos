@@ -76,7 +76,7 @@ async fn main() {
     // Spawn the print task
     tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_stream.next().await {
-            let msg = decode_websocket_message(msg).unwrap();
+            let msg = decode_websocket_message(msg, true).unwrap();
             #[allow(clippy::single_match)]
             match msg.status {
                 Some(proto_public_api::api_up::Status::LinearLiftStatus(linear_lift_status)) => {

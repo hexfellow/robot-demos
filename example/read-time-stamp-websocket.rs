@@ -91,7 +91,7 @@ async fn main() {
     }
     let (_, mut ws_stream) = ws_stream.split();
     while let Some(Ok(msg)) = ws_stream.next().await {
-        let msg = decode_websocket_message(msg).unwrap();
+        let msg = decode_websocket_message(msg, true).unwrap();
         if let Some(time_stamp) = msg.time_stamp {
             let local_now = ptp.now_ms().unwrap();
             info!(

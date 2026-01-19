@@ -45,7 +45,7 @@ async fn main() {
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
     let (session_id, mut ws_stream) = {
-        let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap()).unwrap();
+        let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap(), true).unwrap();
         (msg.session_id, ws_stream)
     };
 
@@ -92,7 +92,7 @@ async fn main() {
     .expect("Failed to send enable KCP message");
 
     let kcp_server_status = loop {
-        let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap()).unwrap();
+        let msg = decode_websocket_message(ws_stream.next().await.unwrap().unwrap(), true).unwrap();
         if msg.kcp_server_status.is_some() {
             info!("KCP Enabled");
             break msg.kcp_server_status.unwrap();
