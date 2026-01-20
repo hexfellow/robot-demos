@@ -1,7 +1,7 @@
 // This is a demo reading info from HELLO, and making the controller's leds green.
 
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
 use log::{error, info};
 use prost::Message;
@@ -180,7 +180,17 @@ async fn main() {
                         if let Some(status) = msg.status.clone() {
                             match status {
                                 proto_public_api::api_up::Status::ArmStatus(arm_status) => {
-                                    info!("Arm Status: {:?}. Secondary Device Status: {:?}", arm_status, msg.secondary_device_status);
+                                    // Collect only position and velocity of each motor
+                                    let motor_data: Vec<(i64, f64)> = arm_status
+                                        .motor_status
+                                        .iter()
+                                        .map(|motor| (motor.position, motor.speed))
+                                        .collect();
+                                    let formatted: Vec<String> = motor_data
+                                        .iter()
+                                        .map(|(pos, speed)| format!("({}, {:.2})", pos, speed))
+                                        .collect();
+                                    info!("Motor positions and velocities: [{}]", formatted.join(", "));
                                 }
                                 _ => {
                                     panic!("Expected ArmStatus, got other robot status {:?}", msg)
@@ -204,49 +214,7 @@ async fn main() {
         .encode_to_vec(),
     )
     .await
-    .expect("Failed to send initialize message");
-
-    // Before sending move command, we need to set initialize the arm first.
-    KcpPortOwner::send_binary(
-        &tx,
-        proto_public_api::ApiDown {
-            down: Some(proto_public_api::api_down::Down::ArmCommand(
-                proto_public_api::ArmCommand {
-                    command: Some(proto_public_api::arm_command::Command::ArmExclusiveCommand(
-                        proto_public_api::ArmExclusiveCommand {
-                        exclusive_command: Some(proto_public_api::arm_exclusive_command::ExclusiveCommand::ApiControlInitialize(
-                            true,
-                        )),
-                        }
-                    )),
-                },
-            )),
-        }
-        .encode_to_vec(),
-    )
-    .await
-    .expect("Failed to send initialize message");
-
-    // Calibrate the arm API control.
-    KcpPortOwner::send_binary(
-        &tx,
-        proto_public_api::ApiDown {
-            down: Some(proto_public_api::api_down::Down::ArmCommand(
-                proto_public_api::ArmCommand {
-                    command: Some(proto_public_api::arm_command::Command::ArmExclusiveCommand(
-                        proto_public_api::ArmExclusiveCommand {
-                        exclusive_command: Some(proto_public_api::arm_exclusive_command::ExclusiveCommand::Calibrate(
-                            true,
-                        )),
-                        }
-                    )),
-                },
-            )),
-        }
-        .encode_to_vec(),
-    )
-    .await
-    .expect("Failed to send initialize message");
+    .expect("Failed to send change frequency message");
 
     // Makes all 6 leds on the controller green.
     // Must not send this command too often. Every command sent will use the CAN bus bandwidth.
@@ -280,31 +248,4 @@ async fn main() {
             .await
             .expect("Failed to send zero torque message");
     }
-
-    // This is essential because if arm lost control for a long time, it will enter protected state.
-    // So lets tell the arm we are finishing our control session.
-    // This is the last message we send to the arm, so inorder to make absolutely sure the arm is deinitialized,
-    // we will send it over Websocket.
-    let deinitialize_bytes = proto_public_api::ApiDown {
-        down: Some(proto_public_api::api_down::Down::ArmCommand(
-            proto_public_api::ArmCommand {
-                command: Some(proto_public_api::arm_command::Command::ArmExclusiveCommand(
-                    proto_public_api::ArmExclusiveCommand {
-                        exclusive_command: Some(proto_public_api::arm_exclusive_command::ExclusiveCommand::ApiControlInitialize(false)),
-                    }
-                )),
-            }
-        )),
-    }
-    .encode_to_vec();
-    if let Err(e) = ws_sink
-        .send(tungstenite::Message::Binary(deinitialize_bytes.into()))
-        .await
-    {
-        panic!("Failed to send deinitialize message: {}", e);
-    }
-    ws_sink.close().await.expect("Failed to close websocket");
-    drop(tx);
-    drop(kcp_port_owner);
-    info!("Successfully deinitialized arm");
 }

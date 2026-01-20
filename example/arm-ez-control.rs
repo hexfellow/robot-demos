@@ -213,7 +213,7 @@ async fn main() {
         .encode_to_vec(),
     )
     .await
-    .expect("Failed to send initialize message");
+    .expect("Failed to send change frequency message");
 
     let motor_cnt = loop {
         let res = MOTOR_CNT.get();
