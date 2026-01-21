@@ -180,17 +180,22 @@ async fn main() {
                         if let Some(status) = msg.status.clone() {
                             match status {
                                 proto_public_api::api_up::Status::ArmStatus(arm_status) => {
+                                    // Find the secondary device status with device_id 1
+                                    let secondary_device_status = msg.secondary_device_status.iter().find(|status| status.device_id == 1);
+                                    if let Some(secondary_device_status) = secondary_device_status {
+                                        info!("Secondary device status: {:?}", secondary_device_status);
+                                    }
                                     // Collect only position and velocity of each motor
-                                    let motor_data: Vec<(i64, f64)> = arm_status
+                                    let motor_data: Vec<(i64, f64, Vec<i32>)> = arm_status
                                         .motor_status
                                         .iter()
-                                        .map(|motor| (motor.position, motor.speed))
+                                        .map(|motor| (motor.position, motor.speed, motor.error.clone()))
                                         .collect();
                                     let formatted: Vec<String> = motor_data
                                         .iter()
-                                        .map(|(pos, speed)| format!("({}, {:.2})", pos, speed))
+                                        .map(|(pos, speed, error)| format!("({}, {:.2}, {:?})", pos, speed, error))
                                         .collect();
-                                    info!("Motor positions and velocities: [{}]", formatted.join(", "));
+                                    info!("Motor positions and velocities and errors: [{}]", formatted.join(", "));
                                 }
                                 _ => {
                                     panic!("Expected ArmStatus, got other robot status {:?}", msg)
