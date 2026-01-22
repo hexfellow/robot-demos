@@ -26,6 +26,10 @@ name = "linear-lift-move-websocket"
 path = "example/linear-lift-move-websocket.rs"
 
 [[bin]]
+name = "rotational-lift-move-to-zero-position-websocket"
+path = "example/rotational-lift-move-to-zero-position-websocket.rs"
+
+[[bin]]
 name = "read-time-stamp-websocket"
 path = "example/read-time-stamp-websocket.rs"
 

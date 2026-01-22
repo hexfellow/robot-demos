@@ -156,3 +156,14 @@ cargo run --features="kcp" --bin arm-ez-control -- 172.18.23.92 8439
 # KCP, ipv6. Change IP Address and Zone id to your own.
 cargo run --features="kcp" --bin arm-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
+
+### Demo: Rotational Lift move to zero position
+
+Move rotational lift to zero position. This demo is websocket only.
+
+#### Usage
+
+```bash
+# IPV4. Change IP Address to your own.
+cargo run --bin rotational-lift-move-to-zero-position-websocket -- 172.18.23.92 8439
+```
