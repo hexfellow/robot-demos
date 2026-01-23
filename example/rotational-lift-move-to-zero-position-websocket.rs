@@ -1,11 +1,14 @@
 #![allow(clippy::clone_on_copy)]
-// This is a demo controling lift to move back zero
-// Be aware that, all numbers stated as intxx can be negative. Do not assume they are always positive.
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
-use robot_demos::{decode_websocket_message, proto_public_api, send_api_down_message_to_websocket};
+use robot_demos::{
+    confirm_and_continue, decode_websocket_message, proto_public_api,
+    send_api_down_message_to_websocket,
+};
 use tokio_tungstenite::MaybeTlsStream;
+
+const INTRO_TEXT: &str = "Control lift to move back zero.";
 
 lazy_static::lazy_static! {
     static ref MOTOR_STATUS: std::sync::Mutex<Vec<proto_public_api::MotorStatus>> = std::sync::Mutex::new(Vec::new());
@@ -28,9 +31,10 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
+    let url = format!("ws://{}:{}", args.url, args.port);
 
-    let url = args.url;
-    let url = format!("ws://{}:{}", url, args.port);
+    confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
+
     info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {

@@ -6,7 +6,7 @@
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
-use robot_demos::decode_websocket_message;
+use robot_demos::{confirm_and_continue, decode_websocket_message};
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, RawFd};
@@ -49,6 +49,8 @@ fn fd_to_clockid(fd: RawFd) -> libc::clockid_t {
     ((!(fd as libc::clockid_t)) << 3) | 3
 }
 
+const INTRO_TEXT: &str = "Read time stamp from the robot.";
+
 #[derive(Parser)]
 struct Args {
     #[arg(
@@ -70,8 +72,10 @@ async fn main() {
     let args = Args::parse();
     let ptp = PtpClock::open(args.device.to_str().unwrap())
         .expect("Failed to open PTP device, are you root? Did you add udev rules?");
-    let url = args.url;
-    let url = format!("ws://{}:{}", url, args.port);
+    let url = format!("ws://{}:{}", args.url, args.port);
+
+    confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
+
     info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {

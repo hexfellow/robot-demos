@@ -1,10 +1,11 @@
 #![allow(clippy::clone_on_copy)]
-// This is a demo controling lift to move to a certain percentage of the max position.
-// Be aware that, all numbers stated as intxx can be negative. Do not assume they are always positive.
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
-use robot_demos::{decode_websocket_message, proto_public_api, send_api_down_message_to_websocket};
+use robot_demos::{
+    confirm_and_continue, decode_websocket_message, proto_public_api,
+    send_api_down_message_to_websocket,
+};
 use tokio_tungstenite::MaybeTlsStream;
 
 #[derive(Parser)]
@@ -30,6 +31,8 @@ struct Args {
     re_calibrate: bool,
 }
 
+const INTRO_TEXT: &str = "Control lift to move to a certain percentage of the max position.";
+
 lazy_static::lazy_static! {
     static ref LINEAR_LIFT_MAX_POS: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
     static ref LINEAR_LIFT_MAX_SPEED: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
@@ -53,8 +56,10 @@ async fn main() {
             args.percentage
         );
     }
-    let url = args.url;
-    let url = format!("ws://{}:{}", url, args.port);
+    let url = format!("ws://{}:{}", args.url, args.port);
+
+    confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
+
     info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {

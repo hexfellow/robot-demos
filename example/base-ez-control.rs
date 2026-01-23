@@ -1,17 +1,15 @@
-// This is a demo controling base to rotate at 0.1 rad/s, while printing data from the base.
-// Based on this code, we make some nice control showcase, like:
-// https://github.com/orgs/hexfellow/discussions/1
-// https://github.com/orgs/hexfellow/discussions/2
-
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
 use log::{error, info};
 use prost::Message;
 use robot_demos::{
-    decode_message, decode_websocket_message, proto_public_api, send_api_down_message_to_websocket,
+    confirm_and_continue, decode_message, decode_websocket_message, proto_public_api,
+    send_api_down_message_to_websocket,
 };
 use tokio::net::UdpSocket;
+
+const INTRO_TEXT: &str = "Control base to rotate at 0.1 rad/s, while printing data from the base.";
 
 #[derive(Parser)]
 struct Args {
@@ -30,8 +28,10 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
-    let url = args.url.clone();
-    let url = format!("ws://{}:{}", url, args.port);
+    let url = format!("ws://{}:{}", args.url, args.port);
+
+    confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
+
     info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {

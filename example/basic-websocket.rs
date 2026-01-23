@@ -1,10 +1,10 @@
-// This is a read-only demo that only prints the basic information from the robot.
-
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{error, info, warn};
-use robot_demos::decode_websocket_message;
+use robot_demos::{confirm_and_continue, decode_websocket_message};
 use tokio_tungstenite::MaybeTlsStream;
+
+const INTRO_TEXT: &str = "Print it's basic information.";
 
 #[derive(Parser)]
 struct Args {
@@ -23,8 +23,10 @@ async fn main() {
     )
     .init();
     let args = Args::parse();
-    let url = args.url;
-    let url = format!("ws://{}:{}", url, args.port);
+    let url = format!("ws://{}:{}", args.url, args.port);
+
+    confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
+
     info!("Try connecting to: {}", url);
     let res = tokio_tungstenite::connect_async(&url).await;
     let ws_stream = match res {
