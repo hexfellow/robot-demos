@@ -32,6 +32,10 @@ The repo contains demos written in following languages:
 
 ## Rust demos
 
+### Install Rust
+
+Go to [https://rust-lang.org/tools/install/](https://rust-lang.org/tools/install/) to install Rust.
+
 ### About IPV6
 > If you don't plan to use IPV6, you can SKIP this section.
 

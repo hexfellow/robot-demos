@@ -253,4 +253,6 @@ async fn main() {
             .await
             .expect("Failed to send zero torque message");
     }
+    drop(tx);
+    drop(kcp_port_owner);
 }
