@@ -1,8 +1,7 @@
 use clap::Parser;
 use futures_util::StreamExt;
-use log::{error, info, warn};
-use robot_demos::{confirm_and_continue, decode_websocket_message};
-use tokio_tungstenite::MaybeTlsStream;
+use log::info;
+use robot_demos::{confirm_and_continue, connect_websocket, decode_websocket_message, init_logger};
 
 const INTRO_TEXT: &str = "Print it's basic information.";
 
@@ -18,35 +17,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-    )
-    .init();
+    init_logger();
     let args = Args::parse();
     let url = format!("ws://{}:{}", args.url, args.port);
 
     confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
 
-    info!("Try connecting to: {}", url);
-    let res = tokio_tungstenite::connect_async(&url).await;
-    let ws_stream = match res {
-        Ok((ws, _)) => ws,
-        Err(e) => {
-            error!(
-                "Error during websocket handshake: {}. Did you type the correct URL?",
-                e
-            );
-            std::process::exit(1);
-        }
-    };
-    info!("Connected to: {}", url);
-    // Remember to set tcp_nodelay to true, to get better performance.
-    match ws_stream.get_ref() {
-        MaybeTlsStream::Plain(stream) => {
-            stream.set_nodelay(true).unwrap();
-        }
-        _ => warn!("set_nodelay not implemented for TLS streams"),
-    }
+    let ws_stream = connect_websocket(&url)
+        .await
+        .expect("Error during websocket handshake. Did you type the correct URL?");
     let (_, mut ws_stream) = ws_stream.split();
 
     // Spawn the print task

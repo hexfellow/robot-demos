@@ -1,12 +1,12 @@
 use futures_util::stream::SplitSink;
 use futures_util::SinkExt;
-use log::warn;
+use log::{warn, info};
 use prost::Message;
 use std::io::Write;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::sleep;
-use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::{WebSocketStream, MaybeTlsStream};
 #[path = "proto-public-api/version.rs"]
 pub mod proto_public_api_version;
 pub const ACCEPTABLE_PROTOCOL_MAJOR_VERSION: u32 = 1;
@@ -187,4 +187,107 @@ pub async fn confirm_and_continue(intro_text: &str, url: &str, port: u16) {
         println!("Exiting...");
         std::process::exit(0);
     }
+}
+
+/// Initializes the logger with default settings (info level).
+///
+/// This is a convenience function that initializes `env_logger` with the same
+/// configuration used across all example files.
+///
+/// # Example
+/// ```no_run
+/// use robot_demos::init_logger;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     init_logger();
+///     // ... rest of your code
+/// }
+/// ```
+pub fn init_logger() {
+    env_logger::Builder::from_env(
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
+    )
+    .init();
+}
+
+/// Connects to a WebSocket URL and sets up TCP nodelay for better performance.
+///
+/// # Arguments
+/// * `url` - The WebSocket URL to connect to (e.g., "ws://127.0.0.1:8439")
+///
+/// # Returns
+/// * `Ok(WebSocketStream)` - The connected WebSocket stream
+/// * `Err(anyhow::Error)` - Error during connection
+///
+/// # Example
+/// ```no_run
+/// use robot_demos::connect_websocket;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let ws_stream = connect_websocket("ws://127.0.0.1:8439").await?;
+///     // ... use the stream
+/// }
+/// ```
+pub async fn connect_websocket(
+    url: &str,
+) -> Result<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, anyhow::Error> {
+    info!("Try connecting to: {}", url);
+    let (ws_stream, _) = tokio_tungstenite::connect_async(url).await?;
+    
+    // Remember to set tcp_nodelay to true, to get better performance.
+    match ws_stream.get_ref() {
+        MaybeTlsStream::Plain(stream) => {
+            stream.set_nodelay(true)?;
+        }
+        _ => warn!("set_nodelay not implemented for TLS streams"),
+    }
+    
+    info!("Connected to: {}", url);
+    Ok(ws_stream)
+}
+
+#[cfg(feature = "kcp")]
+/// Creates a UDP socket bound to an appropriate address based on the IP version.
+///
+/// This helper function creates a UDP socket for KCP communication, binding to
+/// the appropriate address (IPv4 or IPv6) based on the provided URL.
+///
+/// # Arguments
+/// * `url` - The IP address string (e.g., "127.0.0.1" or "[fe80::500d:96ff:fee1:d60b%3]")
+///
+/// # Returns
+/// * `Ok((UdpSocket, u16))` - The bound socket and its local port
+/// * `Err(anyhow::Error)` - Error during socket creation
+///
+/// # Example
+/// ```no_run
+/// use robot_demos::create_kcp_socket;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let (kcp_socket, local_port) = create_kcp_socket("127.0.0.1").await?;
+///     // ... use the socket
+/// }
+/// ```
+pub async fn create_kcp_socket(
+    url: &str,
+) -> Result<(tokio::net::UdpSocket, u16), anyhow::Error> {
+    let ip_addr = url.parse::<std::net::IpAddr>()?;
+    let kcp_socket = if ip_addr.is_ipv4() {
+        tokio::net::UdpSocket::bind(std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
+            0,
+        ))
+        .await?
+    } else {
+        tokio::net::UdpSocket::bind(std::net::SocketAddr::new(
+            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+            0,
+        ))
+        .await?
+    };
+    let local_port = kcp_socket.local_addr()?.port();
+    Ok((kcp_socket, local_port))
 }

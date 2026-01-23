@@ -1,13 +1,12 @@
 use clap::Parser;
 use futures_util::{SinkExt, StreamExt};
 use kcp_bindings::{HexSocketOpcode, HexSocketParser, KcpPortOwner};
-use log::{error, info};
+use log::info;
 use prost::Message;
 use robot_demos::{
-    confirm_and_continue, decode_message, decode_websocket_message, proto_public_api,
-    send_api_down_message_to_websocket,
+    confirm_and_continue, connect_websocket, create_kcp_socket, decode_message,
+    decode_websocket_message, init_logger, proto_public_api, send_api_down_message_to_websocket,
 };
-use tokio::net::UdpSocket;
 
 const INTRO_TEXT: &str = "Control arm to zero torque, while printing data from the arm.";
 
@@ -25,25 +24,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-    )
-    .init();
+    init_logger();
     let args = Args::parse();
     let url = format!("ws://{}:{}", args.url, args.port);
 
     confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
 
-    info!("Try connecting to: {}", url);
-    let res = tokio_tungstenite::connect_async(&url).await;
-    let ws_stream = match res {
-        Ok((ws, _)) => ws,
-        Err(e) => {
-            error!("Error during websocket handshake: {}", e);
-            return;
-        }
-    };
-    info!("Connected to: {}", args.url);
+    let ws_stream = connect_websocket(&url)
+        .await
+        .expect("Error during websocket handshake");
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
     let (session_id, mut ws_stream) = {
@@ -51,24 +40,7 @@ async fn main() {
         (msg.session_id, ws_stream)
     };
 
-    // Check if args.url is ipv4 or ipv6
-    let ip_addr = args.url.parse::<std::net::IpAddr>().unwrap();
-    let kcp_socket = if ip_addr.is_ipv4() {
-        UdpSocket::bind(std::net::SocketAddr::new(
-            std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
-            0,
-        ))
-        .await
-        .unwrap()
-    } else {
-        UdpSocket::bind(std::net::SocketAddr::new(
-            std::net::IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-            0,
-        ))
-        .await
-        .unwrap()
-    };
-    let local_port = kcp_socket.local_addr().unwrap().port();
+    let (kcp_socket, local_port) = create_kcp_socket(&args.url).await.unwrap();
 
     // Enable KCP
     send_api_down_message_to_websocket(

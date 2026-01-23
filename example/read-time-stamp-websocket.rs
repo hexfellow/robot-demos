@@ -5,12 +5,11 @@
 
 use clap::Parser;
 use futures_util::StreamExt;
-use log::{error, info, warn};
-use robot_demos::{confirm_and_continue, decode_websocket_message};
+use log::info;
+use robot_demos::{confirm_and_continue, connect_websocket, decode_websocket_message, init_logger};
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, RawFd};
-use tokio_tungstenite::MaybeTlsStream;
 
 struct PtpClock {
     _file: File,
@@ -65,10 +64,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
-    )
-    .init();
+    init_logger();
     let args = Args::parse();
     let ptp = PtpClock::open(args.device.to_str().unwrap())
         .expect("Failed to open PTP device, are you root? Did you add udev rules?");
@@ -76,23 +72,7 @@ async fn main() {
 
     confirm_and_continue(INTRO_TEXT, &args.url, args.port).await;
 
-    info!("Try connecting to: {}", url);
-    let res = tokio_tungstenite::connect_async(&url).await;
-    let ws_stream = match res {
-        Ok((ws, _)) => ws,
-        Err(e) => {
-            error!("Error during websocket handshake: {}", e);
-            return;
-        }
-    };
-    info!("Connected to: {}", url);
-    // Remember to set tcp_nodelay to true, to get better performance.
-    match ws_stream.get_ref() {
-        MaybeTlsStream::Plain(stream) => {
-            stream.set_nodelay(true).unwrap();
-        }
-        _ => warn!("set_nodelay not implemented for TLS streams"),
-    }
+    let ws_stream = connect_websocket(&url).await.expect("Error during websocket handshake");
     let (_, mut ws_stream) = ws_stream.split();
     while let Some(Ok(msg)) = ws_stream.next().await {
         let msg = decode_websocket_message(msg, true).unwrap();
