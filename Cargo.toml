@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "can-forwarder"
+path = "example/can-forwarder.rs"
+required-features = ["socketcan", "kcp"]
+
+[[bin]]
 name = "basic-websocket"
 path = "example/basic-websocket.rs"
 
@@ -58,6 +63,7 @@ kcp-bindings = {version = "1.1.0", features = ["hexfellow"], optional = true}
 mdns-sd = "0.17.1"
 indicatif = "0.17"
 colored = "2.1"
+socketcan = { version = "3.5.0", features = ["tokio", "enumerate"], optional = true }
 
 [features]
 default = []
