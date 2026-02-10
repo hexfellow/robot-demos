@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "legacy-lift-simulator"
+path = "example/legacy-lift-simulator.rs"
+required-features = ["socketcan"]
+
+[[bin]]
 name = "can-forwarder"
 path = "example/can-forwarder.rs"
 required-features = ["socketcan", "kcp"]

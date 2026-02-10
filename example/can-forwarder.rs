@@ -194,7 +194,6 @@ async fn main() {
     // Wait forever
     std::future::pending::<()>().await;
     drop(kcp_port_owner);
-    info!("Successfully deinitialized arm");
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
