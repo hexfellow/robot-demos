@@ -29,7 +29,7 @@ const CAN_ID_VELOCITY_FEEDBACK: u32 = 0x030201B3;
 const CAN_ID_POSITION_FEEDBACK: u32 = 0x030201B4;
 
 /// Number of (position, timestamp) samples to keep for velocity calculation.
-const SPEED_AVERAGE_WINDOW: usize = 15;
+const SPEED_AVERAGE_WINDOW: usize = 25;
 
 #[derive(Parser)]
 struct Args {
@@ -85,12 +85,12 @@ async fn main() {
         .expect("Error during websocket handshake");
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
-    // Set report frequency to 50Hz so we get frequent position/velocity updates
+    // Set report frequency to 250Hz so we get frequent position/velocity updates
     send_api_down_message_to_websocket(
         &mut ws_sink,
         proto_public_api::ApiDown {
             down: Some(proto_public_api::api_down::Down::SetReportFrequency(
-                proto_public_api::ReportFrequency::Rf50Hz as i32,
+                proto_public_api::ReportFrequency::Rf250Hz as i32,
             )),
         },
     )
