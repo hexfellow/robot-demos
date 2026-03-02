@@ -3,6 +3,9 @@ name = "robot-demos"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "websocket-print-everything"
+path = "example/websocket-print-everything.rs"
 
 [[bin]]
 name = "arm-plotjugger-show-motor-status"
