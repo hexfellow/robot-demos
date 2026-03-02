@@ -16,7 +16,11 @@ make
 
 How to run:
 ```bash
-./base-ez-control ws://172.18.23.92:8439
+# WebSocket version
+./base-ez-control-websocket ws://172.18.23.92:8439
+
+# KCP version (direct UDP communication for lower latency)
+./base-ez-control 172.18.23.92 8439
 ```
 
 ## Dev log
@@ -25,6 +29,6 @@ Run `gen.bash` everytime protobuf files are changed.
 
 ## Warning 
 
-Currently there is no KCP support in C demo.
+KCP support is now available! Use `base-ez-control-kcp` for low-latency UDP communication.
 
-Only websocket is supported.
+WebSocket is still fully supported via `base-ez-control-websocket` and `base-ez-control`.

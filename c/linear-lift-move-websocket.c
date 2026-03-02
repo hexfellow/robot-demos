@@ -9,13 +9,17 @@
 
 static bool quit = false;
 
+static bool have_max_pos = false;
+static bool have_max_speed = false;
+static int64_t g_linear_lift_max_pos = 0;
+static uint32_t g_linear_lift_max_speed = 0;
+
 static void ws_handler(struct mg_connection *c, int ev, void *ev_data)
 {
     switch (ev)
     {
     case MG_EV_WS_OPEN:
     {
-        // Change report frequency to 50Hz, since we don't really need to hear from base too often, do we?
         APIDown change_frequency_msg = APIDown_init_default;
         change_frequency_msg.which_down = APIDown_set_report_frequency_tag;
         change_frequency_msg.down.set_report_frequency = ReportFrequency_Rf50Hz;
@@ -54,14 +58,32 @@ static void ws_handler(struct mg_connection *c, int ev, void *ev_data)
                 c->is_closing = 1;
                 quit = true;
             }
-            if (rx_msg.which_status != APIUp_base_status_tag)
+            if (rx_msg.which_status == APIUp_linear_lift_status_tag)
             {
-                printf("Received message is not a base status message\n");
+                LinearLiftStatus ll = rx_msg.status.linear_lift_status;
+                if (ll.calibrated)
+                {
+                    /* Save max_pos and max_speed so the main task can act on it */
+                    g_linear_lift_max_pos = ll.max_pos;
+                    g_linear_lift_max_speed = ll.max_speed;
+                    have_max_pos = true;
+                    have_max_speed = true;
+                    double pulse_per_meter = (double)ll.pulse_per_rotation;
+                    double current_meter = (double)ll.current_pos / pulse_per_meter;
+                    double max_meter = (double)ll.max_pos / pulse_per_meter;
+                    double percentage = (double)ll.current_pos / (double)ll.max_pos;
+                    printf("[LL] Calibrated: true; Current position: %f m, Max position: %f m, Percentage: %f, Raw Current Pos: %" PRId64 ", Raw Max Pos: %" PRId64 "\n",
+                           current_meter, max_meter, percentage, (int64_t)ll.current_pos, (int64_t)ll.max_pos);
+                }
+                else
+                {
+                    printf("[LL] Lift is not yet calibrated\n");
+                }
+            }else{
+                printf("Received message is not a linear status message\n");
                 c->is_closing = 1;
                 quit = true;
             }
-            printf("[%ld]Received base status message; SpdX: %f, SpdY %f, SpdZ %f\n", time(NULL), rx_msg.status.base_status.estimated_odometry.speed_x,
-                   rx_msg.status.base_status.estimated_odometry.speed_y, rx_msg.status.base_status.estimated_odometry.speed_z);
         }
         break;
     }
@@ -79,6 +101,16 @@ static void ws_handler(struct mg_connection *c, int ev, void *ev_data)
 int main(int argc, char *argv[])
 {
     const char *url = argc > 1 ? argv[1] : "ws://localhost:8000/websocket";
+    double percentage = 0.5;
+    if (argc > 2)
+    {
+        percentage = strtod(argv[2], NULL);
+        if (!(percentage >= 0.0 && percentage <= 1.0))
+        {
+            fprintf(stderr, "percentage must be between 0.0 and 1.0\n");
+            return 1;
+        }
+    }
     struct mg_mgr mgr;
     mg_mgr_init(&mgr);
 
@@ -121,27 +153,59 @@ int main(int argc, char *argv[])
     }
     size_t deinit_buffer_size = stream.bytes_written;
 
-    APIDown move_msg = APIDown_init_default;
-    move_msg.which_down = APIDown_base_command_tag;
-    move_msg.down.base_command.which_command = BaseCommand_simple_move_command_tag;
-    move_msg.down.base_command.command.simple_move_command.which_command = SimpleBaseMoveCommand_xyz_speed_tag;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_x = 0.0;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_y = 0.0;
-    move_msg.down.base_command.command.simple_move_command.command.xyz_speed.speed_z = 0.1;
-    uint8_t move_buffer[1024];
-    stream = pb_ostream_from_buffer(move_buffer, sizeof(move_buffer));
-    status = pb_encode(&stream, APIDown_fields, &move_msg);
-    size_t move_buffer_size = stream.bytes_written;
-    if (!status)
-    {
-        printf("Failed to encode APIDown message\n");
-        quit = true;
-    }
+    /* We will build LinearLift messages later when we know max_pos and max_speed */
+    uint8_t ll_speed_buffer[1024];
+    uint8_t ll_target_buffer[1024];
+    size_t ll_speed_buffer_size = 0;
+    size_t ll_target_buffer_size = 0;
 
     struct timespec start_time_val, last_send_time_val;
     int count = 0;
     clock_gettime(CLOCK_MONOTONIC, &start_time_val);
     clock_gettime(CLOCK_MONOTONIC, &last_send_time_val);
+    /* Wait until we get max pos and speed from lift status */
+    while (!have_max_pos || !have_max_speed)
+    {
+        mg_mgr_poll(&mgr, 20);
+        if (quit)
+        {
+            mg_mgr_free(&mgr);
+            return 1;
+        }
+    }
+
+    /* Compute move target and set speed */
+    int64_t move_target = (int64_t)((double)g_linear_lift_max_pos * percentage);
+    uint32_t speed = (uint32_t)((double)g_linear_lift_max_speed * 0.9);
+
+    /* Build LinearLift SetSpeed message */
+    APIDown ll_speed_msg = APIDown_init_default;
+    ll_speed_msg.which_down = APIDown_linear_lift_command_tag;
+    ll_speed_msg.down.linear_lift_command.which_command = LinearLiftCommand_set_speed_tag;
+    ll_speed_msg.down.linear_lift_command.command.set_speed = speed;
+    pb_ostream_t ll_stream = pb_ostream_from_buffer(ll_speed_buffer, sizeof(ll_speed_buffer));
+    bool ll_status = pb_encode(&ll_stream, APIDown_fields, &ll_speed_msg);
+    if (!ll_status)
+    {
+        printf("Failed to encode LinearLift SetSpeed message\n");
+        quit = true;
+    }
+    ll_speed_buffer_size = ll_stream.bytes_written;
+
+    /* Build LinearLift TargetPos message */
+    APIDown ll_target_msg = APIDown_init_default;
+    ll_target_msg.which_down = APIDown_linear_lift_command_tag;
+    ll_target_msg.down.linear_lift_command.which_command = LinearLiftCommand_target_pos_tag;
+    ll_target_msg.down.linear_lift_command.command.target_pos = move_target;
+    ll_stream = pb_ostream_from_buffer(ll_target_buffer, sizeof(ll_target_buffer));
+    ll_status = pb_encode(&ll_stream, APIDown_fields, &ll_target_msg);
+    if (!ll_status)
+    {
+        printf("Failed to encode LinearLift TargetPos message\n");
+        quit = true;
+    }
+    ll_target_buffer_size = ll_stream.bytes_written;
+
     while (!quit)
     {
         // Send init and move messages for 10s, at 50Hz. Lastly, send deinit message.
@@ -153,13 +217,20 @@ int main(int argc, char *argv[])
         if (elapsed_time_ms >= 20.0)
         {
             mg_ws_send(c, init_buffer, init_buffer_size, WEBSOCKET_OP_BINARY);
-            mg_ws_send(c, move_buffer, move_buffer_size, WEBSOCKET_OP_BINARY);
+            /* Only send set speed once - we can optionally keep sending it, but send once here */
+            if (ll_speed_buffer_size > 0)
+            {
+                mg_ws_send(c, ll_speed_buffer, ll_speed_buffer_size, WEBSOCKET_OP_BINARY);
+                /* Set to zero to avoid sending repeatedly */
+                ll_speed_buffer_size = 0;
+            }
+            mg_ws_send(c, ll_target_buffer, ll_target_buffer_size, WEBSOCKET_OP_BINARY);
             clock_gettime(CLOCK_MONOTONIC, &last_send_time_val);
             printf("Sending message at %ld.%06ld.\n", now_val.tv_sec, now_val.tv_nsec);
             count++;
         }
         // Check if 10 seconds have passed since start time
-        if (total_elapsed_time >= 2.0)
+        if (total_elapsed_time >= 5.0)
         {
             printf("Sending deinit message\n");
             mg_ws_send(c, deinit_buffer, deinit_buffer_size, WEBSOCKET_OP_BINARY);
