@@ -3,57 +3,29 @@ name = "robot-demos"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "websocket-print-everything"
-path = "example/websocket-print-everything.rs"
-
-[[bin]]
-name = "arm-plotjugger-show-motor-status"
-path = "example/arm-plotjugger-show-motor-status.rs"
-
-[[bin]]
+[[example]]
 name = "legacy-lift-simulator"
-path = "example/legacy-lift-simulator.rs"
+path = "examples/legacy-lift-simulator.rs"
 required-features = ["socketcan"]
 
-[[bin]]
+[[example]]
 name = "can-forwarder"
-path = "example/can-forwarder.rs"
+path = "examples/can-forwarder.rs"
 required-features = ["socketcan", "kcp"]
 
-[[bin]]
-name = "basic-websocket"
-path = "example/basic-websocket.rs"
-
-[[bin]]
+[[example]]
 name = "hello-read"
-path = "example/hello-read.rs"
+path = "examples/hello-read.rs"
 required-features = ["kcp"]
 
-[[bin]]
+[[example]]
 name = "base-ez-control"
-path = "example/base-ez-control.rs"
+path = "examples/base-ez-control.rs"
 required-features = ["kcp"]
 
-[[bin]]
-name = "base-ez-control-websocket"
-path = "example/base-ez-control-websocket.rs"
-
-[[bin]]
-name = "linear-lift-move-websocket"
-path = "example/linear-lift-move-websocket.rs"
-
-[[bin]]
-name = "rotational-lift-move-to-zero-position-websocket"
-path = "example/rotational-lift-move-to-zero-position-websocket.rs"
-
-[[bin]]
-name = "read-time-stamp-websocket"
-path = "example/read-time-stamp-websocket.rs"
-
-[[bin]]
+[[example]]
 name = "arm-ez-control"
-path = "example/arm-ez-control.rs"
+path = "examples/arm-ez-control.rs"
 required-features = ["kcp"]
 
 [dependencies]

@@ -48,18 +48,22 @@ You can find the zone id of the interface by running `ip a`. In all of our examp
 ### Demo: Finding All Local HexFellow devices using mDNS.
 
 ```bash
-cargo run --bin robot-demos
+cargo run
 ```
 
 Will output all HexFellow devices found on the network, example output:
 
 ```text
-kisonhe@HEXBeast1 ~/robot-demos (main) [SIGINT]> cargo run --release --bin robot-demos
-    Finished `release` profile [optimized] target(s) in 0.11s
-     Running `target/release/robot-demos`
-Found HexFellow Device "hexfellow-c2149b7bf5fb9a49.local.": {V6(ScopedIpV6 { addr: fe80::500d:96ff:fee1:d60b, scope_id: InterfaceId { name: "enp98s0", index: 4 } }), V4(ScopedIpV4 { addr: 172.18.9.145 })}
-Found HexFellow Device "hexfellow-390be859a9d694d8.local.": {V4(ScopedIpV4 { addr: 172.18.7.230 }), V6(ScopedIpV6 { addr: fe80::1089:c3ff:fe97:9e5f, scope_id: InterfaceId { name: "enp98s0", index: 4 } })}
-Found HexFellow Device "hexfellow-4ede314e9b0023b3.local.": {V4(ScopedIpV4 { addr: 172.18.6.42 }), V6(ScopedIpV6 { addr: fe80::ac05:9fff:feeb:f87f, scope_id: InterfaceId { name: "enp98s0", index: 4 } })}
+~/d/rust-robot-demos (main|✚14) $ cargo run
+   Compiling robot-demos v0.1.0 (/Users/kisonhe/dev/rust-robot-demos)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.07s
+     Running `target/debug/robot-demos`
+Found "hexfellow-2d59f595ba5ad967.local.": {V6(ScopedIpV6 { addr: fe80::904b:4ff:fea3:aa80, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtMaverX4D")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
+Found "hexfellow-2d59f595ba5ad967.local.": {V4(ScopedIpV4 { addr: 172.18.1.76 }), V6(ScopedIpV6 { addr: fe80::904b:4ff:fea3:aa80, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtMaverX4D")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
+Found "hexfellow-ba59fe0cd6bb7849.local.": {V6(ScopedIpV6 { addr: fe80::48fd:70ff:fee9:b4bd, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtArmArcherY6_H1")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
+Found "hexfellow-ba59fe0cd6bb7849.local.": {V4(ScopedIpV4 { addr: 172.18.6.162 }), V6(ScopedIpV6 { addr: fe80::48fd:70ff:fee9:b4bd, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtArmArcherY6_H1")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
+Found "hexfellow-95cbaa28b46184bc.local.": {V6(ScopedIpV6 { addr: fe80::589f:93ff:fe16:f5be, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtUnknown")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
+Found "hexfellow-95cbaa28b46184bc.local.": {V4(ScopedIpV4 { addr: 172.18.17.136 }), V6(ScopedIpV6 { addr: fe80::589f:93ff:fe16:f5be, scope_id: InterfaceId { name: "en0", index: 11 } })}, TxtProperties { properties: [TxtProperty {key: "MainRobotType", val: Some("RtUnknown")}, TxtProperty {key: "SecondaryRobotType", val: Some("RtUnknown")}] }
 ```
 
 ### Demo: Base Ez Control
@@ -70,22 +74,22 @@ Minimum control demo for base. Just command the base to rotate at 0.1 rad/s for 
 
 ```bash
 # KCP, ipv4. Change IP Address to your own.
-cargo run --features="kcp" --bin base-ez-control -- 172.18.23.92 8439
+cargo run --features="kcp" --example base-ez-control -- 172.18.23.92 8439
 ```
 
 ```bash
 # KCP, ipv6. Change IP Address and Zone id to your own.
-cargo run --features="kcp" --bin base-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
+cargo run --features="kcp" --example base-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
 
 ```bash
 # Websocket, ipv4. Change IP Address to your own.
-cargo run --bin base-ez-control-websocket -- 172.18.23.92 8439
+cargo run --example base-ez-control-websocket -- 172.18.23.92 8439
 ```
 
 ```bash
 # Websocket, ipv6. Change IP Address and Zone id to your own.
-cargo run --bin base-ez-control-websocket -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
+cargo run --example base-ez-control-websocket -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
 
 Same as above, but using websocket instead of KCP.
@@ -101,35 +105,35 @@ Move lift to certain percentage off the zero position. This demo is websocket on
 Move lift to 50% off the zero position.
 ```bash
 # IPV4. Change IP Address to your own.
-cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5
+cargo run --example linear-lift-move-websocket -- 172.18.23.92 8439 0.5
 ```
 
 ```bash
 # IPV6. Change IP Address and Zone id to your own.
-cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5
+cargo run --example linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5
 ```
 
 Move lift to 50% off the zero position, at 10% of max speed. (Full speed might be a little too noisy for some lifts.)
 ```bash
 # IPV4. Change IP Address to your own.
-cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5 0.1
+cargo run --example linear-lift-move-websocket -- 172.18.23.92 8439 0.5 0.1
 ```
 
 ```bash
 # IPV6. Change IP Address and Zone id to your own.
-cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5 0.1
+cargo run --example linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5 0.1
 ```
 
 
 Move lift to 50% off the zero position, at 10% of max speed, and calibrate before moving.
 ```bash
 # IPV4. Change IP Address to your own.
-cargo run --bin linear-lift-move-websocket -- 172.18.23.92 8439 0.5 0.1 --re-calibrate
+cargo run --example linear-lift-move-websocket -- 172.18.23.92 8439 0.5 0.1 --re-calibrate
 ```
 
 ```bash
 # IPV6. Change IP Address and Zone id to your own.
-cargo run --bin linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5 0.1 --re-calibrate
+cargo run --example linear-lift-move-websocket -- "[fe80::c44b:a4ff:fe06:a944%4]" 8439 0.5 0.1 --re-calibrate
 ```
 
 ### Demo: Read Time Stamp from PTP Clock
@@ -140,7 +144,7 @@ Read time stamp from PTP clock, and print the difference between the time stamp 
 #### Usage
 
 ```bash
-cargo run --bin read-time-stamp-websocket -- 172.18.23.92 8439 /dev/ptp0
+cargo run --example read-time-stamp-websocket -- 172.18.23.92 8439 /dev/ptp0
 ```
 
 ### Demo: Arm Ez Control
@@ -153,12 +157,12 @@ WARNING: This will cause arm to move due to gravity.
 
 ```bash
 # KCP, ipv4. Change IP Address to your own.
-cargo run --features="kcp" --bin arm-ez-control -- 172.18.23.92 8439
+cargo run --features="kcp" --example arm-ez-control -- 172.18.23.92 8439
 ```
 
 ```bash
 # KCP, ipv6. Change IP Address and Zone id to your own.
-cargo run --features="kcp" --bin arm-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
+cargo run --features="kcp" --example arm-ez-control -- "[fe80::500d:96ff:fee1:d60b%3]" 8439
 ```
 
 ### Demo: Rotational Lift move to zero position
@@ -169,5 +173,5 @@ Move rotational lift to zero position. This demo is websocket only.
 
 ```bash
 # IPV4. Change IP Address to your own.
-cargo run --bin rotational-lift-move-to-zero-position-websocket -- 172.18.23.92 8439
+cargo run --example rotational-lift-move-to-zero-position-websocket -- 172.18.23.92 8439
 ```

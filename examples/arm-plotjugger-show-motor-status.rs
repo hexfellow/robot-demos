@@ -1,5 +1,4 @@
 use clap::Parser;
-use env_logger::fmt::Timestamp;
 use futures_util::stream::SplitSink;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
