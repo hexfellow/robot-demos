@@ -1,6 +1,7 @@
 use clap::Parser;
 use futures_util::StreamExt;
 use log::{info, warn};
+use robot_demos::proto_public_api_version;
 use robot_demos::{
     confirm_and_continue, connect_websocket, decode_websocket_message, init_logger,
     proto_public_api, send_api_down_message_to_websocket,
@@ -58,6 +59,8 @@ async fn main() {
             down: Some(proto_public_api::api_down::Down::SetReportFrequency(
                 proto_public_api::ReportFrequency::Rf50Hz as i32,
             )),
+            protocol_major_version: proto_public_api_version::CURRENT_PROTOCOL_MAJOR_VERSION,
+            protocol_minor_version: proto_public_api_version::CURRENT_PROTOCOL_MINOR_VERSION,
         },
     )
     .await
@@ -74,6 +77,8 @@ async fn main() {
                     ),
                 },
             )),
+            protocol_major_version: proto_public_api_version::CURRENT_PROTOCOL_MAJOR_VERSION,
+            protocol_minor_version: proto_public_api_version::CURRENT_PROTOCOL_MINOR_VERSION,
         },
     )
     .await
@@ -104,6 +109,8 @@ async fn main() {
                         )),
                     },
                 )),
+                protocol_major_version: proto_public_api_version::CURRENT_PROTOCOL_MAJOR_VERSION,
+                protocol_minor_version: proto_public_api_version::CURRENT_PROTOCOL_MINOR_VERSION,
             },
         )
         .await
@@ -121,6 +128,8 @@ async fn main() {
                     ),
                 },
             )),
+            protocol_major_version: proto_public_api_version::CURRENT_PROTOCOL_MAJOR_VERSION,
+            protocol_minor_version: proto_public_api_version::CURRENT_PROTOCOL_MINOR_VERSION,
         },
     )
     .await
