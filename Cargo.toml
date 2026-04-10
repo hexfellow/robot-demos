@@ -9,6 +9,11 @@ path = "examples/legacy-lift-simulator.rs"
 required-features = ["socketcan"]
 
 [[example]]
+name = "base-control-motor-limit-current"
+path = "examples/base-control-motor-limit-current.rs"
+required-features = ["kcp"]
+
+[[example]]
 name = "can-forwarder"
 path = "examples/can-forwarder.rs"
 required-features = ["socketcan", "kcp"]
