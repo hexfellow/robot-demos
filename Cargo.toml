@@ -14,11 +14,6 @@ path = "examples/base-control-motor-limit-current.rs"
 required-features = ["kcp"]
 
 [[example]]
-name = "can-forwarder"
-path = "examples/can-forwarder.rs"
-required-features = ["socketcan", "kcp"]
-
-[[example]]
 name = "hello-read"
 path = "examples/hello-read.rs"
 required-features = ["kcp"]
