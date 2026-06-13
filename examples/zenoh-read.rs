@@ -525,9 +525,6 @@ fn format_api_up(msg: &proto_public_api::ApiUp) -> Vec<Line<'static>> {
         Some(proto_public_api::api_up::Status::RotateLiftStatus(s)) => {
             format_rotate_lift_status(&mut lines, s)
         }
-        Some(proto_public_api::api_up::Status::HexCanApiCanAnyFrames(_)) => {
-            lines.push(Line::from("  CAN Forwarding Mode"));
-        }
         None => {
             lines.push(Line::from("  (no status)"));
         }

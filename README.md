@@ -1,5 +1,7 @@
 # Robot Example
 
+For a full Chinese introduction covering architecture, protocol flow, and API interfaces, see [INTRODUCTION_CN.md](./INTRODUCTION_CN.md).
+
 ## About this repo
 
 This repo is meant to: 
@@ -95,6 +97,24 @@ cargo run --example base-ez-control-websocket -- "[fe80::500d:96ff:fee1:d60b%3]"
 Same as above, but using websocket instead of KCP.
 
 Remember to change the IP address to the actual IP address of the base.
+
+### Demo: Base GUI WebSocket
+
+Start a local browser GUI for a base robot. The Rust process connects to the robot WebSocket API, serves a local webpage, converts robot protobuf status into JSON for the page, and forwards keyboard drive commands back to the base.
+
+```bash
+# Change IP Address to your own.
+cargo run --example base-gui-websocket -- 172.18.23.92 8439
+```
+
+Then open `http://127.0.0.1:8080`. Click `Enable API Control` before driving. Keyboard controls:
+- `W`/`Up` and `S`/`Down`: forward/backward
+- `A`/`Left` and `D`/`Right`: left/right strafe
+- `Q`/`E`: rotate
+- `Space`: stop
+- `Shift`: faster motion while held
+
+The GUI shows connection state, base state, battery, session holder, estimated odometry speed/position, and a simple top-down robot visualization. The backend deinitializes API control when the UI disconnects or the command loop exits.
 
 ### Demo: Linear Lift move
 
